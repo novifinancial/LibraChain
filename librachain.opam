@@ -1,0 +1,24 @@
+opam-version: "1.2"
+version: "dev"
+maintainer: "fga@fb.com"
+
+license: "Apache-2.0"
+synopsis: "Coq formalization of LibraBFT"
+
+build: [ make "-j%{jobs}%" ]
+install: [ make "install" ]
+depends: [
+  "ocaml"
+  "coq" {(>= "8.9" & < "8.11~") | (= "dev")}
+  "coq-mathcomp-ssreflect" {(>= "1.7" & < "1.10~") | (= "dev")}
+  "coq-fcsl-pcm"
+]
+
+tags: [
+  "category:Computer Science/Concurrent Systems and Protocols/Theory of concurrent systems"
+  "keyword:program verification"
+  "keyword:distributed algorithms"
+]
+authors: [
+  "François Garillot"
+]

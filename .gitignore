@@ -1,0 +1,50 @@
+# -----------------------------------------------------------------------------
+# Generic generated file patterns
+# -----------------------------------------------------------------------------
+
+Thumbs.db
+.DS_Store
+.svn
+
+*~
+#*#
+*.bak
+*.BAK
+*.orig
+*.prof
+*.rej
+
+*.hi
+*.hi-boot
+*.o-boot
+*.p_o
+*.t_o
+*.debug_o
+*.thr_o
+*.thr_p_o
+*.thr_debug_o
+*.o
+*.vo
+*.vio
+*.a
+*.o.cmd
+*.depend*
+.#*
+log
+tags
+
+# -----------------------------------------------------------------------------
+#  Coq-generated stuff
+# -----------------------------------------------------------------------------
+
+\#*\#
+*.vo
+*.v.d
+*.glob
+.coq-native
+Makefile.coq
+*.aux
+CoqMakefile.conf
+Makefile.coq.conf
+.coqdeps.d
+awk.Makefile

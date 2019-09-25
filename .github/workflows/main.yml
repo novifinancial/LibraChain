@@ -11,6 +11,4 @@ jobs:
     - uses: actions/checkout@v1
     - name: opam install
       uses: huitseeker/opam-coq-action@master
-    - name: build
-      run: eval $(opam env) && make clean && make
-
+      args: make clean && make

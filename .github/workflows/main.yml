@@ -9,12 +9,7 @@ jobs:
     
     steps:
     - uses: actions/checkout@v1
-    - name: opam install
+    - name: opam install + build
       uses: huitseeker/opam-coq-action@master
-    - name: install dependencies
-      run: |
-        opam repo add coq-released https://coq.inria.fr/opam/released
-        opam install coq-mathcomp-ssreflect coq-fcsl-pcm
-    - name: build
       run: make clean && make
 

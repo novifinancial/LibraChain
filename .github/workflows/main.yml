@@ -12,5 +12,5 @@ jobs:
     - name: opam install
       uses: huitseeker/opam-coq-action@master
     - name: build
-      run: make clean && make
+      run: eval $(opam env) && make clean && make
 

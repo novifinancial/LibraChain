@@ -9,6 +9,7 @@ jobs:
     
     steps:
     - uses: actions/checkout@v1
-    - name: opam install
+    - name: opam install & build
       uses: huitseeker/opam-coq-action@master
-      args: make clean && make
+      with:
+        args: make clean && make

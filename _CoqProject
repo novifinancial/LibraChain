@@ -8,3 +8,4 @@
 Structures/SeqFacts.v
 Structures/Chains.v
 Structures/Blocks.v
+Structures/HashSign.v

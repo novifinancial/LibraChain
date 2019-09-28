@@ -83,7 +83,7 @@ Coercion sort : type >-> Sortclass.
 Coercion eqType : type >-> Equality.type.
 Canonical eqType.
 Notation hashType T := (type (Phant T)).
-Notation HashType T H m := (@pack _ (Phant T) H m _ _ id _ id).
+Notation HashType T H m := (@pack _ (Phant T) H _ m _ _ id _ id).
 Notation HashMixin := Mixin.
 Notation "[ 'hashType' T 'of' H 'for' cH ]" := (@clone _ (Phant T) H cH _ idfun)
   (at level 0, format "[ 'hashType' T 'of' H 'for' cH ]") : form_scope.
@@ -95,7 +95,10 @@ End Hash.
 Export Hash.Exports.
 
 Definition hash_op (T: Type) (H: hashType T) :=
-  Hash.hash (Hash.mixin (Hash.class H)).
+  Hash.hash (Hash.class H).
+
+Lemma hash_inj (T: Type) (H: hashType T) : injective (@hash_op T H).
+Proof. by case: H=> ?[b []]. Qed.
 
 Delimit Scope hash_scope with H.
 Open Scope hash_scope.
@@ -136,7 +139,7 @@ Structure class_of (H: Type) := Class {
 
 Local Coercion base : class_of >-> Hash.class_of.
 
-Structure type (phT: phant T) (phP : phant PublicKey)(phS: phant Signature) := Pack {sort; _ : class_of sort}.
+Structure type (phT: phant T)(phP : phant PublicKey)(phS: phant Signature) := Pack {sort; _ : class_of sort}.
 
 Local Coercion sort : type >-> Sortclass.
 Variable (phT: phant T) (phP : phant PublicKey) (phS: phant Signature) (H: Type) (cH : type phT phP phS).
@@ -146,8 +149,8 @@ Let xH := let: @Pack _ _ _ H _ := cH in H.
 Notation xclass := (class : class_of xH).
 
 Definition pack b0 (m0 : mixin_of PublicKey Signature (@Hash.Pack _ (Phant T) H b0)) :=
-  fun bH b & phant_id (@Hash.class T bH) b =>
-  fun    m & phant_id m0 m => Pack phT phP phS (@Class H b m).
+  fun bH b & phant_id (@Hash.class T (Phant T) bH) b =>
+  fun    m & phant_id m0 m => @Pack phT phP phS _ (@Class H b m).
 
 (* Same FCSL "bug"*)
 (* if we had not re-exported that coercion above, we would need *)
@@ -172,7 +175,8 @@ Coercion hashType : type >-> Hash.type.
 Canonical hashType.
 
 Notation signType T P S := (type (Phant T) (Phant P) (Phant S)).
-Notation SignType P S H m := (@pack _ (Phant P) _ (Phant S) H _ m _ _ id _ id).
+
+Notation SignType T P S H m := (@pack _ _ _ (Phant T) (Phant P) (Phant S) H _ m _ _ id _ id).
 Notation SignMixin := Mixin.
 Notation "[ 'signType' P 'with' S 'of' H 'for' cH ]" := (@clone _ (Phant P) _ (Phant S) H cH _ idfun)
   (at level 0, format "[ 'signType'  P 'with' S 'of'  H  'for'  cH ]") : form_scope.
@@ -182,6 +186,9 @@ End Exports.
 
 End Signable.
 Import Signable.Exports.
+
+Delimit Scope sign_scope with S.
+Open Scope sign_scope.
 
 Definition verify_op (T P: Type) (S: eqType) (H: signType T P S) :=
   Signable.verify (Signable.mixin (Signable.class H)).

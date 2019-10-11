@@ -29,9 +29,6 @@ Record VoteData := mkVD {
 
 (* The VoteMsg assume there's a way to hash and sign VoteData*)
 
-(* TODO: Fix the following line *)
-Import Signable.Exports.
-
 Variables (PublicKey: Type) (Signature: eqType)
             (HashV: signType VoteData PublicKey Signature).
 

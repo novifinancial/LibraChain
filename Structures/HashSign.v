@@ -72,7 +72,6 @@ Definition ordType := Eval hnf in @Ordered.Pack xH xclass.
 End ClassDef.
 
 Module Import Exports.
-
 (* FCSL bug fixing*)
 Coercion Ordered.base : Ordered.class_of >-> Equality.class_of.
 
@@ -92,6 +91,7 @@ Notation "[ 'hashType' T 'of' H ]" := (@clone _ (Phant T) H _ _ id)
 End Exports.
 
 End Hash.
+
 Export Hash.Exports.
 
 Definition hash_op (T: Type) (H: hashType T) :=
@@ -185,7 +185,7 @@ Notation "[ 'signType' P 'with' S 'of' H ]" := (@clone _ (Phant P) _ (Phant S) H
 End Exports.
 
 End Signable.
-Import Signable.Exports.
+Export Signable.Exports.
 
 Delimit Scope sign_scope with S.
 Open Scope sign_scope.

@@ -23,12 +23,9 @@ Record VoteData := mkVD {
   block_round: nat;
   parent_block_hash: Hash;
   parent_block_round: nat;
-  grandparent_block_hash: Hash;
-  grandparent_block_round: nat;
 }.
 
 (* The VoteMsg assume there's a way to hash and sign VoteData*)
-
 Variables (PublicKey: Type) (Signature: eqType)
             (HashV: signType VoteData PublicKey Signature).
 
@@ -62,8 +59,8 @@ Definition vm_eqMixin := CanEqMixin can_vm_triple.
 Canonical vm_eqType := EqType _ vm_eqMixin.
 
 Record QuorumCert := mkQC {
-  voteData: VoteData;
-  votes: seq (PublicKey * Signature);
+  qc_vote_data: VoteData;
+  qc_votes: seq (PublicKey * Signature);
 }.
 
 Definition qc2votes (qc: QuorumCert) :=
@@ -83,8 +80,7 @@ Variable Command: Type.
 Variable NodeTime: Type.
 
 Record BlockData := mkBD {
-    (* Parent's hash pointer *)
-    parent_hash : Hash;
+    (* Parent's hash pointer is in the QC *)
     (* Payload *)
     txs : seq Command;
     (* UnixTime (see liveness) *)
@@ -120,5 +116,16 @@ Definition BD_eqMixin :=
   Eval hnf in (InjEqMixin (@hash_inj _ Block_hashType)).
 Canonical BD_eqType :=
   Eval hnf in EqType _ BD_eqMixin.
+
+Definition bt2bdnsource (bt: BlockType) :=
+  let: mkB bd source := bt in (bd, source).
+Definition bdnsource2bt (bdnsource: BlockData * (PublicKey * Signature)) :=
+  let: (bd, source) := bdnsource in mkB bd source.
+Lemma can_bt_bdnsource: ssrfun.cancel bt2bdnsource bdnsource2bt.
+Proof. by move => []. Qed.
+
+Definition bt_eqMixin := CanEqMixin can_bt_bdnsource.
+Canonical bt_eqType := EqType _ bt_eqMixin.
+
 
 End BlockType.

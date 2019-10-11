@@ -36,7 +36,7 @@ Canonical VD_eqType :=
 
 Variable Address: hashType PublicKey.
 
-Record VoteMsg := mkVM {
+Record VoteMsg (phA: phant Address) := mkVM {
   vote_data: VoteData;
   vote: (PublicKey * Signature);
 }.
@@ -46,11 +46,11 @@ Definition PK_eqMixin :=
 Canonical PK_eqType :=
   Eval hnf in EqType _ PK_eqMixin.
 
-Definition vm2triple (v: VoteMsg) :=
+Definition vm2triple (v: VoteMsg (Phant Address)) :=
   let: mkVM vd pks := v in (vd, pks).
 
 Definition triple2vm (triple: VoteData * (PublicKey * Signature)) :=
-  let: (vd, pks) := triple in mkVM vd pks.
+  let: (vd, pks) := triple in mkVM (Phant Address) vd pks.
 
 Lemma can_vm_triple: ssrfun.cancel vm2triple triple2vm.
 Proof. by move => []. Qed.
@@ -58,15 +58,15 @@ Proof. by move => []. Qed.
 Definition vm_eqMixin := CanEqMixin can_vm_triple.
 Canonical vm_eqType := EqType _ vm_eqMixin.
 
-Record QuorumCert := mkQC {
+Record QuorumCert (phA: phant Address) := mkQC {
   qc_vote_data: VoteData;
   qc_votes: seq (PublicKey * Signature);
 }.
 
-Definition qc2votes (qc: QuorumCert) :=
+Definition qc2votes (qc: QuorumCert (Phant Address)) :=
   let: mkQC vd votes := qc in (vd, votes).
 Definition votes2qc (vs: VoteData * seq (PublicKey * Signature)) :=
-  let: (vd, votes) := vs in mkQC vd votes.
+  let: (vd, votes) := vs in mkQC (Phant Address) vd votes.
 Lemma can_qc_votes: ssrfun.cancel qc2votes votes2qc.
 Proof. by move => []. Qed.
 
@@ -87,8 +87,17 @@ Record BlockData := mkBD {
     time: NodeTime;
     round: nat;
     (* Parent's QC information *)
-    proof : QuorumCert;
+    proof : QuorumCert (Phant Address);
 }.
+
+Record BlockType (hashB: BlockData -> Hash)(inj_hashB: injective hashB) (verifyB: Hash -> PublicKey -> Signature -> bool) := mkB {
+  block_data: BlockData;
+  block_source: PublicKey * Signature;
+}.
+
+Coercion block_data: BlockType >-> BlockData.
+
+Section BlockStructures.
 
 Variable hashB: BlockData -> Hash.
 Hypothesis hashB_inj: injective hashB.
@@ -107,25 +116,21 @@ Definition Block_signMixin :=
 Canonical Block_signType :=
   Eval hnf in SignType BlockData PublicKey Signature Hash Block_signMixin.
 
-Record BlockType := mkB {
-  block_data: BlockData;
-  block_source: PublicKey * Signature;
-}.
-
 Definition BD_eqMixin :=
   Eval hnf in (InjEqMixin (@hash_inj _ Block_hashType)).
 Canonical BD_eqType :=
   Eval hnf in EqType _ BD_eqMixin.
 
-Definition bt2bdnsource (bt: BlockType) :=
+Definition bt2bdnsource (bt: BlockType hashB_inj verifB) :=
   let: mkB bd source := bt in (bd, source).
 Definition bdnsource2bt (bdnsource: BlockData * (PublicKey * Signature)) :=
-  let: (bd, source) := bdnsource in mkB bd source.
+  let: (bd, source) := bdnsource in mkB hashB_inj verifB bd source.
 Lemma can_bt_bdnsource: ssrfun.cancel bt2bdnsource bdnsource2bt.
 Proof. by move => []. Qed.
 
 Definition bt_eqMixin := CanEqMixin can_bt_bdnsource.
 Canonical bt_eqType := EqType _ bt_eqMixin.
 
+End BlockStructures.
 
 End BlockType.

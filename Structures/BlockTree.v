@@ -33,9 +33,6 @@ Variable verifB: Hash -> PublicKey -> Signature -> bool.
 Notation BType := (BlockType inj_hashB verifB).
 Notation QC := (QuorumCert Hash Signature (Phant Address)).
 
-(* Canonical BDHType := Eval hnf in (Block_hashType inj_hashB). *)
-(* Canonical BSType := Eval hnf in (Block_signType inj_hashB verifB). *)
-
 Implicit Type b: BType.
 
 Notation "# b" := (hashB b) (at level 20).
@@ -45,7 +42,6 @@ Parameter GenesisBlock : BType.
 
 (* In fact, it's a forest, as it also keeps orphan blocks *)
 Definition BlockTree := union_map Hash BType.
-(* Canonical umBlockTree := Eval hnf in [um_class of BlockTree]. *)
 
 Implicit Type bt : BlockTree.
 
@@ -66,9 +62,7 @@ Definition btExtend bt b :=
   (* A hash collision makes the blocktree undefined *)
     else um_undef
   else
-    if find (qc_hash b) bt is Some parent then
-      (#b \\-> b \+ bt)
-    else bt.
+      (#b \\-> b \+ bt).
 
 Definition Blockchain := seq BType.
 Definition parent (b1 b2: BType) := #b1 == qc_hash b2.
@@ -103,27 +97,29 @@ Record ConsensusState := mkConsensusState {
   preferred_block_round: nat;
 }.
 
-Definition voting_rule(state: ConsensusState)(bp: BType) :=
-  match (round bp), (last_vote_round state), (preferred_block_round state) with
-  | rd, lvr, pvr =>
-    if [&& rd > lvr & rd >= pvr] then
-      let newState := mkConsensusState rd pvr in
-      (true, newState)
-    else (false, state)
-  end.
-
-
-Definition commit_rule(state: ConsensusState)(qc: QC)(bround: nat) :=
-  let: potential_commit_round := (parent_block_round (qc_vote_data qc)) in
-  if (potential_commit_round.+1 == (block_round (qc_vote_data qc))) && ((block_round (qc_vote_data qc)).+1 == bround) then
-    Some(potential_commit_round)
-  else None.
-
 Definition update(state: ConsensusState)(qc: QC) :=
   let: round := (block_round (qc_vote_data qc)) in
   if (round > preferred_block_round state) then
     mkConsensusState (last_vote_round state) (round)
   else
     state.
+
+Definition voting_rule(state: ConsensusState)(bp: BType) :=
+  let after_update := update state (qc_of bp) in
+  match (round bp), (last_vote_round after_update), (preferred_block_round after_update) with
+  | rd, lvr, pvr =>
+    if [&& rd > lvr & rd >= pvr] then
+      let newState := mkConsensusState rd pvr in
+      (true, newState)
+    else (false, after_update)
+  end.
+
+
+Definition commit_rule(state: ConsensusState)(qc: QC)(bround: nat) :=
+  let: potential_commit_round := (parent_block_round (qc_vote_data qc)) in
+  if (potential_commit_round.+1 == (block_round (qc_vote_data qc))) &&
+        ((block_round (qc_vote_data qc)).+1 == bround) then
+    Some(potential_commit_round)
+  else None.
 
 End Forests.

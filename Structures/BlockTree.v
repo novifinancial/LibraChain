@@ -40,6 +40,8 @@ Notation "# b" := (hashB b) (at level 20).
 Parameter peers : seq Address.
 Parameter GenesisBlock : BType.
 
+Definition genesis_round := (round (block_data GenesisBlock)).
+
 (* In fact, it's a forest, as it also keeps orphan blocks *)
 Definition BlockTree := union_map Hash BType.
 
@@ -97,25 +99,208 @@ Record ConsensusState := mkConsensusState {
   preferred_block_round: nat;
 }.
 
-Definition update(state: ConsensusState)(qc: QC) :=
+Definition genesis_state := mkConsensusState genesis_round genesis_round.
+
+Implicit Type state: ConsensusState.
+
+Definition update state (qc: QC) :=
   let: round := (block_round (qc_vote_data qc)) in
   if (round > preferred_block_round state) then
     mkConsensusState (last_vote_round state) (round)
   else
     state.
 
-Definition voting_rule(state: ConsensusState)(bp: BType) :=
-  let after_update := update state (qc_of bp) in
-  match (round bp), (last_vote_round after_update), (preferred_block_round after_update) with
-  | rd, lvr, pvr =>
-    if [&& rd > lvr & rd >= pvr] then
-      let newState := mkConsensusState rd pvr in
-      (true, newState)
-    else (false, after_update)
-  end.
+Lemma update_eq_lvr state qc :
+  last_vote_round (update state qc) = last_vote_round state.
+Proof.
+rewrite /update.
+by case (block_round (qc_vote_data qc) > preferred_block_round state).
+Qed.
+
+Lemma update_pbr_gt state qc :
+  preferred_block_round state <= preferred_block_round (update state qc).
+Proof.
+rewrite /update.
+case H: (block_round (qc_vote_data qc) > preferred_block_round state) => //.
+by move/ltnW: H => ->.
+Qed.
+
+Lemma update_qc_gt state qc :
+  block_round (qc_vote_data qc) <= preferred_block_round (update state qc).
+Proof.
+rewrite /update; case H: (preferred_block_round state < (block_round (qc_vote_data qc))) => //.
+by rewrite leqNgt H.
+Qed.
+
+Lemma update_pbr_P state qc:
+  reflect (preferred_block_round (update state qc) = block_round (qc_vote_data qc))
+          (preferred_block_round state <= block_round (qc_vote_data qc)).
+Proof.
+apply: (iffP idP); rewrite /update;
+case H: (block_round (qc_vote_data qc) > preferred_block_round state);
+rewrite leq_eqVlt H ?orbF ?orbT //; move/eqP=> //.
+Qed.
+
+Definition votable state b :=
+  let: (rd, lvr, pbr) :=
+     ((round b),
+     (last_vote_round state),
+     (preferred_block_round state)) in [&& rd > lvr & rd >= pbr].
+
+Lemma votable_updateP state b:
+  reflect (votable (update state (qc_of b)) b)
+  (votable state b && (round b >= block_round (qc_vote_data (qc_of b)))).
+Proof.
+  apply: (iffP andP); rewrite /votable update_eq_lvr.
+- rewrite /update; case (preferred_block_round state < block_round (qc_vote_data (qc_of b)));
+  by move=> [H1 H2]; move/andP: H1=> [-> H1] //; rewrite ltnW //.
+- move/andP => [->] //= H.
+  apply/andP; rewrite (leq_trans (update_pbr_gt _ _) H) //=.
+  by apply: (leq_trans (update_qc_gt state _)).
+Qed.
+
+Lemma votable_update_round_geq state b:
+  (votable (update state (qc_of b)) b) =
+  (votable state b && (round b >= block_round (qc_vote_data (qc_of b)))).
+Proof.
+by apply/(sameP idP); apply: votable_updateP.
+Qed.
+
+Definition voting_rule state (b: BType) :=
+  let after_update := update state (qc_of b) in
+  if votable (after_update) b then
+    let newState :=
+        mkConsensusState (round b) (preferred_block_round after_update)
+    in
+    (newState, true)
+  else (after_update, false).
+
+Definition voted_on state b := (voting_rule state b).2.
+
+Lemma voted_on_votable state b:
+  voted_on state b = votable (update state (qc_of b)) b.
+Proof.
+rewrite /voted_on /voting_rule.
+by case: (votable (update state (qc_of b)) b) => //.
+Qed.
+
+Lemma voted_br_gt_qcr state b:
+  voted_on state b = true ->
+  round b >= block_round (qc_vote_data (qc_of b)).
+Proof.
+rewrite /voted_on /voting_rule.
+case H: (votable (update state (qc_of b)) b).
+- by move/votable_updateP: H; move/andP => [_ ->].
+- by rewrite /update; case (preferred_block_round state < _).
+Qed.
+
+Lemma ineq_voted_on state b:
+  (voted_on state b) = [&& (round b > last_vote_round state),
+                         (round b >= preferred_block_round state) &
+                         (round b >= block_round (qc_vote_data (qc_of b)))].
+Proof.
+by rewrite voted_on_votable votable_update_round_geq /votable -andbA.
+Qed.
 
 
-Definition commit_rule(state: ConsensusState)(qc: QC)(bround: nat) :=
+Lemma vote_genesis_N: voted_on genesis_state GenesisBlock = false.
+Proof.
+by rewrite voted_on_votable /votable update_eq_lvr /= /genesis_round ltnn.
+Qed.
+
+Definition next_state state b := (voting_rule state b).1.
+
+Lemma next_state_pbr_update state b :
+  preferred_block_round (next_state state b) = preferred_block_round (update state (qc_of b)).
+Proof.
+by rewrite /next_state /voting_rule; case (votable (update state (qc_of b)) b).
+Qed.
+
+Lemma next_state_pbr_gt state b:
+  preferred_block_round state <= preferred_block_round (next_state state b).
+Proof.
+by rewrite next_state_pbr_update update_pbr_gt.
+Qed.
+
+Lemma next_state_lvr_voted state b :
+  reflect (last_vote_round state < last_vote_round (next_state state b)) (voted_on state b).
+Proof.
+rewrite /next_state /voting_rule -voted_on_votable; apply: (iffP idP).
+- move=>H; rewrite (H)=>//=; move:H; rewrite ineq_voted_on.
+  by move/andP=>[-> _].
+- by case: (voted_on state b); rewrite // update_eq_lvr ltnn.
+Qed.
+
+Lemma voting_next_voted state b :
+  voting_rule state b = (next_state state b, voted_on state b).
+Proof.
+by apply surjective_pairing.
+Qed.
+
+Implicit Type bseq: seq BType.
+
+(* node_processing is a slight modification on a scanleft of the voting rules
+over a seq of block *)
+Fixpoint process_aux state bseq res :=
+  if bseq is x::s then
+    let: (new_state, vote) := (voting_rule state x) in
+    process_aux new_state s ((state, vote) :: res)
+  else
+    (state, rev res).
+
+Definition node_processing state bseq := process_aux state bseq [::].
+
+Lemma size_process_aux state bseq res: size (process_aux state bseq res).2 = size bseq + size res.
+Proof.
+elim:bseq res state => [|x xs IHs] res state.
+- by rewrite size_rev add0n.
+- by rewrite /= voting_next_voted IHs /= addSnnS.
+Qed.
+
+Lemma size_processing state bseq : size (node_processing state bseq).2 == size bseq.
+Proof.
+by rewrite /node_processing size_process_aux addn0.
+Qed.
+
+Lemma processing_aux_rcons state bseq r rs:
+  (process_aux state bseq (rcons rs r)).2 =
+  r :: (process_aux state bseq rs).2.
+Proof.
+elim: bseq r rs state =>[| b bs IHb] r rs state => /=.
+- by rewrite rev_rcons.
+- by rewrite voting_next_voted -IHb -rcons_cons.
+Qed.
+
+Lemma processing_aux_rev state bseq res:
+  (process_aux state bseq res).2 =
+  rev res ++ (process_aux state bseq [::]).2.
+Proof.
+move: res bseq state; apply: last_ind=> [|rs r IHr] bseq state.
+- by [].
+- by rewrite processing_aux_rcons IHr rev_rcons.
+Qed.
+
+Lemma processing_aux_cons state b bs:
+  (process_aux state (b::bs) [::]).2 =
+  (state, voted_on state b) :: (process_aux (next_state state b) bs [::]).2.
+Proof.
+rewrite /= voting_next_voted -[[:: (state, voted_on _ _)]]cat0s cats1.
+by rewrite processing_aux_rcons.
+Qed.
+
+Lemma node_processing_cons state b bs:
+  (node_processing state (b::bs)).2 =
+  (state, voted_on state b) :: (node_processing (next_state state b) bs).2.
+Proof.
+by rewrite processing_aux_cons.
+Qed.
+
+
+Definition node_aggregator bseq :=
+  (foldl (fun stateNvote => voting_rule stateNvote.1) (genesis_state,false) bseq).1.
+
+
+Definition commit_rule state (qc: QC)(bround: nat) :=
   let: potential_commit_round := (parent_block_round (qc_vote_data qc)) in
   if (potential_commit_round.+1 == (block_round (qc_vote_data qc))) &&
         ((block_round (qc_vote_data qc)).+1 == bround) then

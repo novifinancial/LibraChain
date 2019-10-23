@@ -99,6 +99,18 @@ Record ConsensusState := mkConsensusState {
   preferred_block_round: nat;
 }.
 
+Definition consensusstate2nats (cs: ConsensusState) :=
+  let: mkConsensusState lvr pvr := cs in (lvr, pvr).
+
+Definition nats2consensusstate (nats: nat * nat) :=
+  let: (lvr, pbr) := nats in mkConsensusState lvr pbr.
+
+Lemma can_cs_nats: ssrfun.cancel consensusstate2nats nats2consensusstate.
+Proof. by move => []. Qed.
+
+Definition cs_eqMixin := CanEqMixin can_cs_nats.
+Canonical cs_eqType := EqType _ cs_eqMixin.
+
 Definition genesis_state := mkConsensusState genesis_round genesis_round.
 
 Implicit Type state: ConsensusState.
@@ -294,6 +306,32 @@ Lemma node_processing_cons state b bs:
 Proof.
 by rewrite processing_aux_cons.
 Qed.
+
+Definition voted_in_processing state bseq :=
+  mask (unzip2 (node_processing state bseq).2) bseq.
+
+Lemma voted_in_processing_idx state bseq b :
+  uniq bseq ->
+  (b \in (voted_in_processing state bseq)) =
+  (voted_on (nth state (unzip1 (node_processing state bseq).2) (index b bseq) ) b && (b \in bseq)).
+Proof.
+elim: bseq b state =>[| bb bbs IHbb] b state Huniq /=.
+- by rewrite in_nil andbF.
+rewrite /voted_in_processing node_processing_cons /unzip2 /unzip1 map_cons.
+case H: (bb == b).
+- move: Huniq; move/eqP: H=> ->/=; rewrite in_cons eqxx orTb andbT.
+  case H2: (voted_on state b); first by rewrite in_cons eqxx orTb.
+  move/andP=>[H _]; move: H; apply: contraNF; exact: mem_mask.
+rewrite mask_cons mem_cat mem_nseq in_cons eq_sym H andbF 2!orFb.
+move: Huniq; rewrite cons_uniq; move/andP => [_ Huniq].
+rewrite map_cons -/unzip1 (IHbb _ _ Huniq) /=.
+case Hbbs: (b \in bbs); first rewrite 2!andbT; last by rewrite 2!andbF.
+move/idP: Hbbs; rewrite -index_mem.
+move/eqP: (size_processing (next_state state bb) bbs)=><-.
+rewrite -(size_map fst) -/unzip1=> Hsize; apply/eqP.
+by rewrite (nth_in_default_irrel (next_state state bb) state Hsize).
+Qed.
+
 
 
 Definition node_aggregator bseq :=

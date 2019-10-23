@@ -61,6 +61,16 @@ by move/eqP in H; subst h=>_; rewrite eq_sym.
 by move=> H'; apply (Hi H H').
 Qed.
 
+Lemma nth_in_default_irrel {T: eqType} (x0 y0: T) (s: seq T) (i: nat):
+  i < size s ->
+  nth x0 s i = nth y0 s i.
+Proof.
+elim: i s => [|n IHn] s; case: s => [| q qs] /=; first by rewrite ltn0.
+- by [].
+- by rewrite ltn0.
+- by rewrite ltnS => HH; rewrite IHn.
+Qed.
+
 Lemma rem_elem {T: eqType} (p : T) xs ys :
   p \notin xs-> seq.rem p (xs ++ p :: ys) = xs ++ ys.
 Proof.

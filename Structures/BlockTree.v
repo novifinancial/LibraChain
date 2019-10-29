@@ -345,6 +345,14 @@ Qed.
 Definition voted_in_processing state bseq :=
   mask (unzip2 (node_processing state bseq).2) bseq.
 
+(* Sadly, undup is right-biased contrarily to its documentation, so we have to *)
+(* define an rundup "by hand"*)
+
+(* Lemma voted_in_processing_cons state b bseq : *)
+(*   voted_in_processing state (b :: bseq) = *)
+(*   voted_in_processing state (b :: (filter (predC1 b) bseq)). *)
+
+(* THis should be strenghtened to take the above into account *)
 Lemma voted_in_processing_idx state bseq b:
   uniq bseq ->
   (b \in (voted_in_processing state bseq)) =

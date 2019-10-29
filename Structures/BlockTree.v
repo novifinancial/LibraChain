@@ -249,6 +249,15 @@ Proof.
 by apply surjective_pairing.
 Qed.
 
+Lemma voting_next_N state b: voted_on (next_state state b) b = false.
+Proof.
+rewrite voted_on_votable votable_update_round_geq /votable.
+rewrite {1}/next_state /voting_rule.
+case H:(votable (update state (qc_of b)) b) => /=; first by rewrite ltnn.
+rewrite /votable -next_state_pbr_update in H.
+by rewrite H andFb.
+Qed.
+
 Implicit Type bseq: seq BType.
 
 (* node_processing is a slight modification on a scanleft of the voting rules
@@ -269,9 +278,16 @@ elim:bseq res state => [|x xs IHs] res state.
 - by rewrite /= voting_next_voted IHs /= addSnnS.
 Qed.
 
-Lemma size_processing state bseq : size (node_processing state bseq).2 == size bseq.
+Lemma size_processing state bseq : size (node_processing state bseq).2 = size bseq.
 Proof.
 by rewrite /node_processing size_process_aux addn0.
+Qed.
+
+Lemma processing_aux_state_res_irrel state bseq rs1 rs2:
+  (process_aux state bseq rs1).1 = (process_aux state bseq rs2).1.
+Proof.
+elim: bseq state rs1 rs2 => [|b bs IHb] state rs1 rs2 //=; rewrite voting_next_voted.
+by apply:IHb.
 Qed.
 
 Lemma processing_aux_rcons state bseq r rs:
@@ -300,6 +316,17 @@ rewrite /= voting_next_voted -[[:: (state, voted_on _ _)]]cat0s cats1.
 by rewrite processing_aux_rcons.
 Qed.
 
+Lemma processing_aux_cons2 state b bs:
+  (process_aux state (b::bs) [::]) =
+  let: (f_state, vbs) := (process_aux (next_state state b) bs [::]) in
+  (f_state, (state, voted_on state b) ::vbs).
+Proof.
+rewrite /= voting_next_voted -[[:: (state, voted_on _ _)]]cat0s cats1.
+rewrite [process_aux _ bs [::]]surjective_pairing -processing_aux_cons /=.
+rewrite (processing_aux_state_res_irrel _ _ [::] [:: (state, voted_on state b)]).
+by rewrite voting_next_voted -surjective_pairing.
+Qed.
+
 Lemma node_processing_cons state b bs:
   (node_processing state (b::bs)).2 =
   (state, voted_on state b) :: (node_processing (next_state state b) bs).2.
@@ -307,10 +334,18 @@ Proof.
 by rewrite processing_aux_cons.
 Qed.
 
+Lemma node_processing_cons2 state b bs:
+  (node_processing state (b::bs)) =
+  let: (final_state, bsvotes) := node_processing (next_state state b) bs in
+  (final_state, (state, voted_on state b)::bsvotes).
+Proof.
+by  rewrite /node_processing processing_aux_cons2.
+Qed.
+
 Definition voted_in_processing state bseq :=
   mask (unzip2 (node_processing state bseq).2) bseq.
 
-Lemma voted_in_processing_idx state bseq b :
+Lemma voted_in_processing_idx state bseq b:
   uniq bseq ->
   (b \in (voted_in_processing state bseq)) =
   (voted_on (nth state (unzip1 (node_processing state bseq).2) (index b bseq) ) b && (b \in bseq)).
@@ -327,11 +362,22 @@ move: Huniq; rewrite cons_uniq; move/andP => [_ Huniq].
 rewrite map_cons -/unzip1 (IHbb _ _ Huniq) /=.
 case Hbbs: (b \in bbs); first rewrite 2!andbT; last by rewrite 2!andbF.
 move/idP: Hbbs; rewrite -index_mem.
-move/eqP: (size_processing (next_state state bb) bbs)=><-.
+move: (size_processing (next_state state bb) bbs)=><-.
 rewrite -(size_map fst) -/unzip1=> Hsize; apply/eqP.
 by rewrite (nth_in_default_irrel (next_state state bb) state Hsize).
 Qed.
 
+Lemma node_processing_cat_cps state bs1 bs2 :
+  (node_processing state (bs1 ++ bs2)) =
+  let: (state1, seq1) := (node_processing state bs1) in
+  let: (state2, seq2) := (node_processing state1 bs2) in
+  (state2, seq1 ++ seq2).
+Proof.
+elim: bs1 state =>[| b bs IHb] state /=.
+- by rewrite {2}[node_processing _ _]surjective_pairing -surjective_pairing.
+rewrite 2!node_processing_cons2 IHb [node_processing (next_state _ _) _]surjective_pairing /=.
+by rewrite [node_processing _  _]surjective_pairing.
+Qed.
 
 
 Definition node_aggregator bseq :=

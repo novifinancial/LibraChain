@@ -407,6 +407,52 @@ move => H; rewrite /next_state /voting_rule -2!voted_on_votable H.
 by move/voting_update_progress: H=> -> /=; rewrite !update_maxn /= maxnAC.
 Qed.
 
+Lemma voted_on_maxn state b:
+  (voted_on state b) =
+  (round b >= maxn
+               (maxn ((last_vote_round state).+1) (preferred_block_round state))
+               (block_round (qc_vote_data (qc_of b)))).
+Proof.
+by rewrite !geq_max -andbA ineq_voted_on.
+Qed.
+
+Lemma voting_push_right state b c x:
+  voted_on (next_state (next_state state b) c) x ->
+  voted_on (next_state (next_state state c) b) x.
+Proof.
+rewrite 2!ineq_voted_on.
+move/andP=> [Hlvr]; move/andP => [Hpbr]; move: (Hpbr).
+rewrite pbr_next_stateC =>[-> ->]/=.
+move: Hlvr; rewrite andbT.
+repeat rewrite [next_state (next_state _ _) _]next_state_lvr_if [last_vote_round (if _ then _ else _)]fun_if /=.
+case Hc: (voted_on (next_state state b) c).
+- move/idP: (Hc); move/voting_progress;
+  rewrite {2}[next_state state c]next_state_lvr_if=>-> /= Hcx.
+  case Hb: (voted_on (next_state state c) b); last by [].
+  move/voting_gt: (Hc); move/voting_progress: Hb=>->/= H.
+  apply: (ltn_trans H Hcx).
+rewrite next_state_lvr_if fun_if /=.
+case Hb: (voted_on (next_state state c) b); first by move/voting_progress: (Hb)=>->.
+rewrite /= next_state_lvr_if [last_vote_round (if _ then _ else _)]fun_if /=.
+case Hbb: (voted_on state b); case Hcc: (voted_on state c) => //.
+- move/negbT: Hc; rewrite ineq_voted_on.
+  rewrite negb_and (next_state_lvr_round Hbb) (voted_br_gt_qcr Hcc).
+  rewrite andbT next_state_pbr_update -leqNgt -ltnNge.
+  move/idP: (Hbb); rewrite voted_on_votable /votable; move/andP=>[_ Hpbr2].
+  move/orP=>[|]; first by apply leq_ltn_trans.
+  by move=> Hpb Hbx; apply/(leq_trans Hpb)/(leq_trans Hpbr2)/ltnW.
+- move/idP: Hbb; rewrite ineq_voted_on; move/andP=>[H _].
+  by apply ltn_trans.
+move => _; move/negbT: (Hc); rewrite ineq_voted_on.
+move/negbT: (Hbb); move/next_state_lvr_static=>->.
+rewrite negb_and (voted_br_gt_qcr Hcc) andbT.
+move: (Hcc); rewrite ineq_voted_on; move/andP=> [-> _] /=.
+rewrite -ltnNge=> Hpbr2; move: Hpbr.
+rewrite next_state_pbr_update update_maxn /=.
+move/(leq_trans (leq_maxl (preferred_block_round (next_state state b)) (block_round (qc_vote_data (qc_of c))))).
+by move/(leq_trans Hpbr2).
+Qed.
+
 Implicit Type bseq: seq BType.
 
 (* node_processing is a slight modification on a scanleft of the voting rules
@@ -491,6 +537,14 @@ Proof.
 by  rewrite /node_processing processing_aux_cons2.
 Qed.
 
+Lemma node_processing_cons1 state b bs:
+  (node_processing state (b::bs)).1 =
+  (node_processing (next_state state b) bs).1.
+Proof.
+case: bs state b=>[|x s ]=>state b; rewrite node_processing_cons2 //=.
+by rewrite [node_processing _ _]surjective_pairing /=.
+Qed.
+
 Lemma node_processing_cat_cps state bs1 bs2 :
   (node_processing state (bs1 ++ bs2)) =
   let: (state1, seq1) := (node_processing state bs1) in
@@ -501,6 +555,90 @@ elim: bs1 state =>[| b bs IHb] state /=.
 - by rewrite {2}[node_processing _ _]surjective_pairing -surjective_pairing.
 rewrite 2!node_processing_cons2 IHb [node_processing (next_state _ _) _]surjective_pairing /=.
 by rewrite [node_processing _  _]surjective_pairing.
+Qed.
+
+Lemma node_processing_rcons state bs b:
+  (next_state (node_processing state bs).1 b) =
+  (node_processing state (rcons bs b)).1.
+Proof.
+rewrite -cats1 node_processing_cat_cps /=.
+rewrite {2}[node_processing _ _]surjective_pairing /=.
+rewrite [node_processing _ [::b]]surjective_pairing /=.
+by rewrite node_processing_cons1 /=.
+Qed.
+
+Lemma voting_progress_seq state bs b:
+  voted_on (node_processing state bs).1 b -> voted_on state b.
+Proof.
+elim: bs state b => [|x s IHs] state b //=.
+rewrite node_processing_cons1.
+move/IHs; apply voting_progress.
+Qed.
+
+Definition comparator state1 :=
+  maxn (last_vote_round state1).+1 (preferred_block_round state1).
+
+Definition state_compare state1 state2 :=
+  comparator state1 <= comparator state2.
+
+Delimit Scope state_scope with STATE.
+Open Scope state_scope.
+
+Notation "state1 <% state2" := (state_compare state1 state2) (at level 40) :state_scope.
+
+Lemma voting_comparator state x:
+  (voted_on state x) ->
+  (comparator (next_state state x) = (round x).+1).
+Proof.
+rewrite next_state_lvr_if fun_if /comparator /= =>H.
+rewrite H; apply/maxn_idPl; move/idP:H; rewrite voted_on_votable.
+by move/andP=>[_ H]; apply ltnW; rewrite ltnS.
+Qed.
+
+Lemma voting_gt_compare state1 state2 x:
+  state1 <% state2 -> voted_on state2 x -> voted_on state1 x.
+Proof.
+move=> H; rewrite 2!voted_on_maxn; apply leq_trans.
+rewrite geq_max leq_maxr leq_max andbT.
+by apply/orP; left.
+Qed.
+
+Lemma voting_next_gt state x:
+  state <% (next_state state x).
+Proof.
+rewrite next_state_lvr_if.
+case Hx:(voted_on state x); rewrite /state_compare /=.
+- move/idP: Hx; rewrite voted_on_maxn.
+  rewrite leq_max geq_max; move/andP=> [H _].
+  by apply/orP; left; apply ltnW.
+rewrite update_maxn /= leq_max 2!geq_max ltnS leqnn andTb.
+rewrite leq_maxl andbT leq_max.
+case I: (last_vote_round state < preferred_block_round state);
+first by rewrite orTb orbT.
+move/negbT: I; rewrite ltnNge; move/negPn=> H.
+by rewrite orFb; apply/orP; left; apply ltnW.
+Qed.
+
+Lemma voting_next_inner state1 state2 x:
+  state1 <% state2 ->
+  (next_state state1 x) <% (next_state state2 x).
+Proof.
+move => H12.
+case H2: (voted_on state2 x).
+- rewrite /state_compare (voting_comparator H2).
+  move/(voting_gt_compare H12): H2; move/voting_comparator=>->.
+  by apply: ltnSn.
+case H1: (voted_on state1 x).
+- rewrite /state_compare (voting_comparator H1).
+  rewrite /comparator; move/negbT: (H2); rewrite voted_on_votable.
+  rewrite /votable /= next_state_pbr_update next_state_lvr_if H2 /=.
+  rewrite negb_and -leqNgt -ltnNge leq_max.
+  move/orP=>[|->]; last by rewrite orbT.
+  by rewrite update_maxn /= ltnS =>->.
+rewrite 2!next_state_lvr_if H1 H2.
+move: H12; rewrite /state_compare /comparator 2!update_maxn /=.
+rewrite !maxnA=>H12; rewrite geq_max leq_max H12 orTb andTb.
+by rewrite leq_max leqnn orbT.
 Qed.
 
 Definition voted_in_processing state bseq :=

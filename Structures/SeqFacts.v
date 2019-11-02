@@ -84,6 +84,14 @@ elim: s=> [|y ys IHs] //=; case H: (y == x)=> /=; first by apply IHs.
 by rewrite in_cons eq_sym H orFb IHs.
 Qed.
 
+Lemma not_in_all_predC1 x s:
+  all (predC1 x) s = (x \notin s).
+Proof.
+elim: s => [|y s IHs] //.
+rewrite in_cons /all -/(all (predC1 x)) {1}/predC1 negb_or eq_sym /=.
+by apply: andb_id2l.
+Qed.
+
 Fixpoint rundup (s: seq T) :=
   if s is x :: s' then x :: (filter (predC1 x) (rundup s')) else [::].
 
@@ -163,6 +171,22 @@ elim: s => //= x s IHs; rewrite (fun_if rundup) /= fun_if -filter_predI.
 rewrite (eq_filter (predIC p _)) filter_predI IHs; case H: (p x) => //=.
 apply/eqP; rewrite all_filter all_notin.
 by rewrite -IHs mem_filter H andFb.
+Qed.
+
+Lemma predC1_eq s x: x::s =i x::(filter (predC1 x) s).
+Proof.
+move=> y; rewrite 2!in_cons; case Hyx: (y == x); first by [].
+by rewrite 2!orFb mem_filter /= Hyx andTb.
+Qed.
+
+Lemma predC1_split s x: x \in s -> s =i x::(filter (predC1 x) s).
+Proof.
+elim: s=> [|y s IHs] Hx //.
+move: Hx; rewrite in_cons; case Hxy: (x == y).
+- by move/eqP: Hxy=>-> _; rewrite /filter {1}/predC1 /= eq_refl; apply: predC1_eq.
+rewrite orFb; move/IHs=> Hs; rewrite /filter {1}/predC1 /= eq_sym Hxy /=.
+move=> z; rewrite 3!in_cons; case Hx: (z == y); first by rewrite orbT.
+rewrite 2!orFb -in_cons; move: z {Hx}; apply Hs.
 Qed.
 
 Lemma rem_elem (p : T) xs ys :

@@ -416,44 +416,6 @@ Proof.
 by rewrite !geq_max -andbA ineq_voted_on.
 Qed.
 
-(* TODO: remove the following, obsoleted by comparatorC.*)
-Lemma voting_push_right state b c x:
-  voted_on (next_state (next_state state b) c) x ->
-  voted_on (next_state (next_state state c) b) x.
-Proof.
-rewrite 2!ineq_voted_on.
-move/andP=> [Hlvr]; move/andP => [Hpbr]; move: (Hpbr).
-rewrite pbr_next_stateC =>[-> ->]/=.
-move: Hlvr; rewrite andbT.
-repeat rewrite [next_state (next_state _ _) _]next_state_lvr_if [last_vote_round (if _ then _ else _)]fun_if /=.
-case Hc: (voted_on (next_state state b) c).
-- move/idP: (Hc); move/voting_progress;
-  rewrite {2}[next_state state c]next_state_lvr_if=>-> /= Hcx.
-  case Hb: (voted_on (next_state state c) b); last by [].
-  move/voting_gt: (Hc); move/voting_progress: Hb=>->/= H.
-  apply: (ltn_trans H Hcx).
-rewrite next_state_lvr_if fun_if /=.
-case Hb: (voted_on (next_state state c) b); first by move/voting_progress: (Hb)=>->.
-rewrite /= next_state_lvr_if [last_vote_round (if _ then _ else _)]fun_if /=.
-case Hbb: (voted_on state b); case Hcc: (voted_on state c) => //.
-- move/negbT: Hc; rewrite ineq_voted_on.
-  rewrite negb_and (next_state_lvr_round Hbb) (voted_br_gt_qcr Hcc).
-  rewrite andbT next_state_pbr_update -leqNgt -ltnNge.
-  move/idP: (Hbb); rewrite voted_on_votable /votable; move/andP=>[_ Hpbr2].
-  move/orP=>[|]; first by apply leq_ltn_trans.
-  by move=> Hpb Hbx; apply/(leq_trans Hpb)/(leq_trans Hpbr2)/ltnW.
-- move/idP: Hbb; rewrite ineq_voted_on; move/andP=>[H _].
-  by apply ltn_trans.
-move => _; move/negbT: (Hc); rewrite ineq_voted_on.
-move/negbT: (Hbb); move/next_state_lvr_static=>->.
-rewrite negb_and (voted_br_gt_qcr Hcc) andbT.
-move: (Hcc); rewrite ineq_voted_on; move/andP=> [-> _] /=.
-rewrite -ltnNge=> Hpbr2; move: Hpbr.
-rewrite next_state_pbr_update update_maxn /=.
-move/(leq_trans (leq_maxl (preferred_block_round (next_state state b)) (block_round (qc_vote_data (qc_of c))))).
-by move/(leq_trans Hpbr2).
-Qed.
-
 Implicit Type bseq: seq BType.
 
 (* node_processing is a slight modification on a scanleft of the voting rules
@@ -792,18 +754,6 @@ rewrite in_cons node_processing_cons1; case Hx: (b \in s).
    by rewrite (comparator_processing _ (comparatorC state x b)) {2}/filter /predC1 /= eq_sym Hbx /= -node_processing_cons1.
 rewrite orbF=> Hbx; move/negbT: Hx; rewrite -not_in_all_predC1; move/all_filterP; rewrite /filter /predC1 /= eq_sym Hbx /==>->.
 by move/eqP: Hbx=><-.
-Qed.
-
-(* TODO: probably suppress the below, obsoleted by comparator reasoning *)
-Lemma voting_progress_cat_rcons state bs1 bs2 b x:
-  voted_on (node_processing state (bs1 ++ rcons bs2 x)).1 b -> voted_on (next_state (node_processing state bs1).1 x) b.
-Proof.
-rewrite node_processing_rcons.
-elim: bs2 state bs1 x b=> [| x2 s2 IHs2] state bs1 x b /=; first by rewrite cats1.
-rewrite node_processing_cat_cps 2![node_processing _ _]surjective_pairing /=.
-rewrite node_processing_cons1 -[rcons s2 x]cat0s; move/IHs2.
-rewrite /= node_processing_cons1 /= -node_processing_rcons.
-by apply voting_gt_compare; apply voting_next_inner; apply voting_next_gt.
 Qed.
 
 Lemma comparator_orderfree state bs1 bs2:

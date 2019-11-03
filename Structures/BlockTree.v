@@ -872,29 +872,25 @@ Proof.
 move=> H; apply (voted_in_processing_comparison _ (comparator_orderfree _ H)).
 Qed.
 
-(* THis should be strenghtened to take the above into account *)
 Lemma voted_in_processing_idx state bseq b:
-  uniq bseq ->
   (b \in (voted_in_processing state bseq)) =
   (voted_on (nth state (unzip1 (node_processing state bseq).2) (index b bseq) ) b && (b \in bseq)).
 Proof.
-elim: bseq b state =>[| bb bbs IHbb] b state Huniq /=.
+rewrite voted_in_rundup.
+elim: bseq b state =>[| bb bbs IHbb] b state /=.
 - by rewrite in_nil andbF.
-rewrite /voted_in_processing node_processing_cons /unzip2 /unzip1 map_cons.
+rewrite /voted_in_processing /= 2!node_processing_cons /unzip2 mask_cons -/(map snd) /=.
 case H: (bb == b).
-- move: Huniq; move/eqP: H=> ->/=; rewrite in_cons eqxx orTb andbT.
-  case H2: (voted_on state b); first by rewrite in_cons eqxx orTb.
-  move/andP=>[H _]; move: H; apply: contraNF; exact: mem_mask.
-rewrite mask_cons mem_cat mem_nseq in_cons eq_sym H andbF 2!orFb.
-move: Huniq; rewrite cons_uniq; move/andP => [_ Huniq].
-rewrite map_cons -/unzip1 (IHbb _ _ Huniq) /=.
-case Hbbs: (b \in bbs); first rewrite 2!andbT; last by rewrite 2!andbF.
-move/idP: Hbbs; rewrite -index_mem.
-move: (size_processing (next_state state bb) bbs)=><-.
-rewrite -(size_map fst) -/unzip1=> Hsize; apply/eqP.
-by rewrite (nth_in_default_irrel (next_state state bb) state Hsize).
+- move/eqP: H=> ->; rewrite in_cons eqxx.
+  case H2: (voted_on state b); first by rewrite in_cons eqxx orTb andbT.
+  rewrite /=; apply: negbTE; apply: contraT; move/negPn=>H.
+  by move: (mem_mask H); rewrite mem_filter /= eq_refl.
+rewrite mem_cat mem_nseq in_cons eq_sym H andbF 2!orFb.
+rewrite -/unzip2 -/(voted_in_processing (next_state state bb) _).
+rewrite -voted_in_predC1 IHbb /=; case Hbbs: (b\in bbs); last by rewrite 2!andbF.
+rewrite (nth_in_default_irrel (next_state state bb) state _); first by [].
+by rewrite size_map size_processing index_mem.
 Qed.
-
 
 Definition node_aggregator bseq :=
   (foldl (fun stateNvote => voting_rule stateNvote.1) (genesis_state,false) bseq).1.

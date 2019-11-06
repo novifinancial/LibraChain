@@ -70,8 +70,6 @@ Definition Blockchain := seq BType.
 Definition parent (b1 b2: BType) := #b1 == qc_hash b2.
 Definition chained (bc: seq BType):= path parent GenesisBlock bc.
 
-(************************************************************)
-
 Definition bcLast (bc : Blockchain) := last GenesisBlock bc.
 
 Definition subchain (bc1 bc2 : Blockchain) := exists p q, bc2 = p ++ bc1 ++ q.
@@ -93,6 +91,10 @@ Proof. by move=>Vh h c; rewrite findF;case: ifP=>//_ /Vh. Qed.
 
 Lemma validH_undef : validH um_undef.
 Proof. by rewrite/validH=>h b; rewrite find_undef. Qed.
+
+(************************************************************)
+(** Consensus State                                        **)
+(************************************************************)
 
 Record ConsensusState := mkConsensusState {
   last_vote_round: nat;
@@ -154,11 +156,17 @@ rewrite leq_eqVlt H ?orbF ?orbT //; move/eqP=> //.
 Qed.
 
 Lemma update_maxn state qc:
-  update state qc = mkConsensusState (last_vote_round state) (maxn (preferred_block_round state) (block_round (qc_vote_data qc))).
+  update state qc =
+  mkConsensusState (last_vote_round state)
+                   (maxn (preferred_block_round state) (block_round (qc_vote_data qc))).
 Proof.
 rewrite /update /maxn; case: ((preferred_block_round state) < (block_round (qc_vote_data qc))) => //=.
 by case state.
 Qed.
+
+(************************************************************)
+(** Voting after update with the QC                        **)
+(************************************************************)
 
 Definition votable state b :=
   let: (rd, lvr, pbr) :=
@@ -287,7 +295,9 @@ Qed.
 Lemma next_state_maxn state b:
   (next_state state b) =
   let: u_pbr := (maxn (preferred_block_round state) (block_round (qc_vote_data (qc_of b)))) in
-  mkConsensusState (if (round b) >= maxn ((last_vote_round state).+1) u_pbr then round b else last_vote_round state) u_pbr.
+  mkConsensusState
+    (if (round b) >= maxn ((last_vote_round state).+1) u_pbr then round b else last_vote_round state)
+    u_pbr.
 Proof.
 rewrite /next_state /voting_rule update_maxn.
 set pbr:= (maxn (preferred_block_round state) (block_round (qc_vote_data (qc_of b)))).
@@ -367,9 +377,12 @@ move/andP=>[Hlvr]; move/andP=> [H1 H2].
 by rewrite ineq_voted_on update_eq_lvr Hs H1 H2.
 Qed.
 
+(* TODO: figure out if we want to keep this one, probably obsoleted by *)
+(* comparator reasoning?*)
 Lemma next_stateC state b c:
   next_state (next_state state b) c =
-  if (~~ voted_on state b || ((round b < round c) && (block_round (qc_vote_data (qc_of c)) <= round c))) then
+  if (~~ voted_on state b || ((round b < round c) &&
+     (block_round (qc_vote_data (qc_of c)) <= round c))) then
     next_state (update state (qc_of b)) c
   else
     (update (next_state state b) (qc_of c)).
@@ -415,6 +428,10 @@ Lemma voted_on_maxn state b:
 Proof.
 by rewrite !geq_max -andbA ineq_voted_on.
 Qed.
+
+(************************************************************)
+(** Voting in Sequence                                     **)
+(************************************************************)
 
 Implicit Type bseq: seq BType.
 
@@ -538,6 +555,10 @@ rewrite node_processing_cons1.
 move/IHs; apply voting_progress.
 Qed.
 
+(************************************************************)
+(** Consensus State Comparators                            **)
+(************************************************************)
+
 Definition comparator state1 :=
   maxn (last_vote_round state1).+1 (preferred_block_round state1).
 
@@ -636,6 +657,9 @@ move: state1 state2; elim bs => [|b s IHs]=> state1 state2 H12 //.
 by rewrite 2!node_processing_cons1 IHs // voting_next_inner.
 Qed.
 
+(************************************************************)
+(** Sequence of elements which a node voted on             **)
+(************************************************************)
 
 Definition voted_in_processing state bseq :=
   mask (unzip2 (node_processing state bseq).2) bseq.
@@ -687,7 +711,8 @@ case Hb: (voted_on state b); [ rewrite (next_state_lvr_round Hb) (voting_compara
   by rewrite maxnAC; move: (leq_ltn_trans (leq_trans Hprcsc Hcpc) Hqbc); move/ltnW/maxn_idPr=>->.
 - move: (Hb); rewrite voting_comparator_eq; move/andP=>[Hcpb Hbrb] /=.
   rewrite Hcpb; move/negbT: (Hc); rewrite voting_comparator_eq negb_and.
-  case Hbrc: ((block_round (qc_vote_data (qc_of c))) <= round c); [rewrite orbF andbT andTb -ltnNge => Hcpc | rewrite andbF andTb => _ ].
+  case Hbrc: ((block_round (qc_vote_data (qc_of c))) <= round c);
+    [rewrite orbF andbT andTb -ltnNge => Hcpc | rewrite andbF andTb => _ ].
   - by rewrite ltnNge; move/ltnW: (leq_trans Hcpc Hcpb)=> Hbb; rewrite Hbb (leq_trans Hbrc Hbb) /=.
   move/negbT: Hbrc; rewrite -ltnNge=> Hbrc; case Hqbb: (block_round (qc_vote_data (qc_of c)) <= round b); first by [].
   move/negbT: Hqbb; rewrite -ltnNge=> Hqbb; rewrite maxnAC; rewrite  [maxn (round b).+1 _]maxnCA; move/maxn_idPr: (Hqbb)=>->.
@@ -731,7 +756,8 @@ rewrite next_state_lvr_if voting_next_N update_maxn next_state_pbr_update update
 rewrite -/(preferred_block_round {| last_vote_round := last_vote_round state;
   preferred_block_round := maxn (preferred_block_round state) (block_round (qc_vote_data (qc_of b))) |}).
 rewrite -update_maxn -next_state_pbr_update.
-have H: forall s, s = {| last_vote_round := (last_vote_round s); preferred_block_round:= (preferred_block_round s)|}; first by case.
+have H: forall s, s = {| last_vote_round := (last_vote_round s);
+                    preferred_block_round:= (preferred_block_round s)|}; first by case.
 by rewrite {3}(H (next_state state b)).
 Qed.
 
@@ -817,7 +843,8 @@ Qed.
 
 Lemma voted_in_processing_state_orderfree state bs1 bs2 bseq:
   bs1 =i bs2 ->
-  voted_in_processing (node_processing state bs1).1 bseq = voted_in_processing (node_processing state bs2).1 bseq.
+  voted_in_processing (node_processing state bs1).1 bseq =
+  voted_in_processing (node_processing state bs2).1 bseq.
 Proof.
 move=> H; apply (voted_in_processing_comparison _ (comparator_orderfree _ H)).
 Qed.
@@ -841,6 +868,11 @@ rewrite -voted_in_predC1 IHbb /=; case Hbbs: (b\in bbs); last by rewrite 2!andbF
 rewrite (nth_in_default_irrel (next_state state bb) state _); first by [].
 by rewrite size_map size_processing index_mem.
 Qed.
+
+(************************************************************)
+(** Node Aggregation                                       **)
+(************************************************************)
+
 
 Definition node_aggregator bseq :=
   (foldl (fun stateNvote => voting_rule stateNvote.1) (genesis_state,false) bseq).1.

@@ -8,6 +8,7 @@
 Structures/SeqFacts.v
 Structures/Chains.v
 Structures/Blocks.v
+Structures/ConsensusState.v
 Structures/HashSign.v
 Structures/BlockTree.v
 Structures/BFTFacts.v

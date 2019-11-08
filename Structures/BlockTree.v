@@ -8,6 +8,7 @@ Require Import SeqFacts Chains HashSign Blocks.
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
+Require Import Recdef.
 
 (* A formalization of a block forests *)
 (*Some bits and pieces (btExtend relation properties) taken from *)
@@ -42,15 +43,15 @@ Notation "# b" := (hashB b) (at level 20).
 Parameter peers : seq Address.
 Parameter GenesisBlock : BType.
 
+Definition qc_of b := (proof (block_data b)).
+Definition qc_hash b := (block_hash (qc_vote_data (qc_of b))).
+
 Definition genesis_round := (round (block_data GenesisBlock)).
 
 (* In fact, it's a forest, as it also keeps orphan blocks *)
 Definition BlockTree := union_map Hash BType.
 
 Implicit Type bt : BlockTree.
-
-Definition qc_of b := (proof (block_data b)).
-Definition qc_hash b := (block_hash (qc_vote_data (qc_of b))).
 
 Definition btHasBlock bt b :=
   (#b \in dom bt) && (find (#b) bt == Some b).
@@ -722,5 +723,69 @@ Qed.
 Lemma btExtendV_fold' bt xs ys :
   validH bt-> valid (foldl btExtend bt (xs ++ ys)) -> valid (foldl btExtend bt ys).
 Proof. by move=>Vh; rewrite foldl_cat btExtendV_fold_comm //= -foldl_cat=>/btExtendV_fold. Qed.
+
+Function compute_chain_up_to (bound: BType) bt b {measure round b} : Blockchain :=
+  if b ∈ bt then
+    match find (qc_hash b) bt with
+    | None => [::]
+    | Some prev =>
+      if prev == bound then [:: b] else
+        if (round b <= round prev) then [::] else
+          rcons (nosimpl (compute_chain_up_to bound (free (# b) bt) prev)) b
+    end
+  else [::].
+Proof.
+move=> bound bt b Hb prev Hprev Hgen.
+move/negbT; rewrite leqNgt; move/negbNE=> Hbound.
+by apply/ltP.
+Qed.
+
+Definition compute_chain bt b :=
+  compute_chain_up_to GenesisBlock bt b.
+
+Lemma last_compute_chain_up_to (bound: BType) bt b:
+  let: l := (compute_chain_up_to bound bt b) in
+  last (head bound l) (behead l) = if l is [::] then bound else b.
+Proof.
+apply compute_chain_up_to_rec=>//=; move=> {bt b} bt b Hb prev Hprev.
+case =>[|Hgenesis _] //; case =>[|] //.
+move/negbT; rewrite leqNgt; move/negbNE=> Hround.
+move=> _ _ _; set l:= (compute_chain_up_to bound (free (# b) bt) prev).
+rewrite -(last_cons GenesisBlock) head_rcons -headI.
+by rewrite last_rcons; case l=>//.
+Qed.
+
+Lemma compute_chain_up_to_is_chained (bound: BType) bt b:
+  validH bt ->
+  let: l := (compute_chain_up_to bound bt b) in
+  path parent (head bound l) (behead l).
+Proof.
+apply compute_chain_up_to_rec=>//=; move=> {bt b} bt b Hb prev Hprev.
+case =>[|Hgenesis _] //; case =>[|] //.
+move/negbT; rewrite leqNgt; move/negbNE=> Hround.
+move=> _ _; move: (last_compute_chain_up_to bound (free (#b) bt) prev).
+set l:= (compute_chain_up_to bound (free (# b) bt) prev).
+case H: l=> [| x xs] /= Hlast IH Hvalid //=.
+rewrite rcons_path (IH (validH_free Hvalid)) andTb.
+by rewrite /parent Hlast (Hvalid _ _ Hprev).
+Qed.
+
+Lemma comput_chain_is_chained bt b:
+  validH bt ->
+  parent GenesisBlock (head GenesisBlock (compute_chain bt b)) ->
+  path parent GenesisBlock (compute_chain bt b).
+Proof.
+rewrite /compute_chain.
+apply compute_chain_up_to_ind=> //=; move=> {bt b} bt b Hb prev Hprev.
+- by rewrite /parent; move/eqP=> HprevG Hvalid; rewrite (Hvalid _ _ Hprev) HprevG eq_refl.
+case =>[|Hgen] _ //; case=> [|] //.
+move/negbT; rewrite leqNgt; move/negbNE=> Hround.
+move => _ _; move: (last_compute_chain_up_to GenesisBlock (free (#b) bt) prev).
+set l:= (compute_chain_up_to GenesisBlock (free (# b) bt) prev).
+case H: l=> [| x xs] /= Hlast IH Hvalid //=; first by rewrite andbT.
+move=> Hbx; rewrite rcons_path Hlast {3}/parent (Hvalid _ _ Hprev) eq_refl andbT.
+by apply (IH (validH_free Hvalid)).
+Qed.
+
 
 End Forests.

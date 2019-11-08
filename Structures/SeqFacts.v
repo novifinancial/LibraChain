@@ -19,6 +19,12 @@ Variable T: eqType.
 
 Implicit Types (x y :T).
 
+Lemma head_rcons x y (s: seq T):
+  head x (rcons s y) = head y s.
+Proof.
+by case: s.
+Qed.
+
 Lemma rem_neq x y ls :
   x != y -> x \in ls -> x \in seq.rem y ls.
 Proof.

@@ -741,7 +741,11 @@ by apply/ltP.
 Qed.
 
 Definition compute_chain bt b :=
-  compute_chain_up_to GenesisBlock bt b.
+  let: l := compute_chain_up_to GenesisBlock bt b in
+  if parent GenesisBlock (head GenesisBlock l) then
+    compute_chain_up_to GenesisBlock bt b
+  else
+    [::].
 
 Lemma last_compute_chain_up_to (bound: BType) bt b:
   let: l := (compute_chain_up_to bound bt b) in
@@ -770,22 +774,21 @@ rewrite rcons_path (IH (validH_free Hvalid)) andTb.
 by rewrite /parent Hlast (Hvalid _ _ Hprev).
 Qed.
 
-Lemma comput_chain_is_chained bt b:
+Lemma compute_chain_is_chained bt b:
   validH bt ->
-  parent GenesisBlock (head GenesisBlock (compute_chain bt b)) ->
   path parent GenesisBlock (compute_chain bt b).
 Proof.
 rewrite /compute_chain.
-apply compute_chain_up_to_ind=> //=; move=> {bt b} bt b Hb prev Hprev.
-- by rewrite /parent; move/eqP=> HprevG Hvalid; rewrite (Hvalid _ _ Hprev) HprevG eq_refl.
-case =>[|Hgen] _ //; case=> [|] //.
+apply compute_chain_up_to_ind=> //=; move=> {bt b} bt b Hb prev Hprev; try by case (parent GenesisBlock GenesisBlock) => //=.
+- by rewrite /parent; move/eqP=> HprevG Hvalid; rewrite (Hvalid _ _ Hprev) HprevG eq_refl /= -HprevG (Hvalid _ _ Hprev) eq_refl.
+- case =>[|Hgen] _ //; case=> [|] //.
 move/negbT; rewrite leqNgt; move/negbNE=> Hround.
 move => _ _; move: (last_compute_chain_up_to GenesisBlock (free (#b) bt) prev).
 set l:= (compute_chain_up_to GenesisBlock (free (# b) bt) prev).
-case H: l=> [| x xs] /= Hlast IH Hvalid //=; first by rewrite andbT.
-move=> Hbx; rewrite rcons_path Hlast {3}/parent (Hvalid _ _ Hprev) eq_refl andbT.
+case H: l=> [| x xs] /= Hlast //=.
+- by case HGb: (parent GenesisBlock b) => //=; rewrite andbT.
+- case HGx: (parent GenesisBlock x)=> /= IH Hvalid //=; rewrite rcons_path Hlast {3}/parent (Hvalid _ _ Hprev) eq_refl andbT.
 by apply (IH (validH_free Hvalid)).
 Qed.
-
 
 End Forests.

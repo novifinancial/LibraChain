@@ -724,6 +724,10 @@ Lemma btExtendV_fold' bt xs ys :
   validH bt-> valid (foldl btExtend bt (xs ++ ys)) -> valid (foldl btExtend bt ys).
 Proof. by move=>Vh; rewrite foldl_cat btExtendV_fold_comm //= -foldl_cat=>/btExtendV_fold. Qed.
 
+(**************************************************)
+(** The chain computed following parent pointers **)
+(**************************************************)
+
 Function compute_chain_up_to (bound: BType) bt b {measure round b} : Blockchain :=
   if b ∈ bt then
     match find (qc_hash b) bt with
@@ -776,9 +780,9 @@ Qed.
 
 Lemma compute_chain_is_chained bt b:
   validH bt ->
-  path parent GenesisBlock (compute_chain bt b).
+  chained (compute_chain bt b).
 Proof.
-rewrite /compute_chain.
+rewrite /chained /compute_chain.
 apply compute_chain_up_to_ind=> //=; move=> {bt b} bt b Hb prev Hprev; try by case (parent GenesisBlock GenesisBlock) => //=.
 - by rewrite /parent; move/eqP=> HprevG Hvalid; rewrite (Hvalid _ _ Hprev) HprevG eq_refl /= -HprevG (Hvalid _ _ Hprev) eq_refl.
 - case =>[|Hgen] _ //; case=> [|] //.

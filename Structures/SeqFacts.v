@@ -195,6 +195,15 @@ move=> z; rewrite 3!in_cons; case Hx: (z == y); first by rewrite orbT.
 rewrite 2!orFb -in_cons; move: z {Hx}; apply Hs.
 Qed.
 
+Lemma cat_take_drop_in s x:
+  x \in s ->
+  take (index x s) s ++ x :: drop (index x s).+1 s == s.
+Proof.
+move=> Hx; rewrite -{2}(nth_index x Hx).
+rewrite -cat_rcons -take_nth; last by rewrite index_mem.
+by rewrite cat_take_drop.
+Qed.
+
 Lemma rem_elem (p : T) xs ys :
   p \notin xs-> seq.rem p (xs ++ p :: ys) = xs ++ ys.
 Proof.

@@ -41,6 +41,13 @@ Definition genesis_round := (round (block_data GenesisBlock)).
 
 Definition qc_of b := (proof (block_data b)).
 
+Lemma rounds_transitive:
+  transitive (fun b1 b2 => (round b1) < (round b2)).
+Proof.
+by move=> b1 b2 b3; apply ltn_trans.
+Qed.
+
+
 (************************************************************)
 (** Consensus State                                        **)
 (************************************************************)
@@ -606,6 +613,37 @@ move: state1 state2; elim bs => [|b s IHs]=> state1 state2 H12 //.
 by rewrite 2!node_processing_cons1 IHs // voting_next_inner.
 Qed.
 
+Lemma comparators_transitive:
+  transitive (fun s1 s2 => (comparator s1) <= (comparator s2)).
+Proof.
+by move=> s1 s2 s3; apply leq_trans.
+Qed.
+
+Lemma node_processing_sorted state bs:
+  sorted (fun s1 s2 => (comparator s1) <= (comparator s2)) (unzip1 (node_processing state bs).2).
+Proof.
+move: state; elim: bs=>[| b bs IHb] state //.
+rewrite node_processing_cons; move:(IHb (next_state state b)); rewrite /path /sorted /=.
+case H: (unzip1 (node_processing (next_state state b) bs).2) =>// [x xs].
+rewrite /path -/(path _ _ _)=>-> /=; move:H; case bs=> [|y ys]//=.
+rewrite andbT node_processing_cons /=; move/eqP; rewrite eqseq_cons.
+by move/andP=>[/eqP<- _]; apply: voting_next_gt.
+Qed.
+
+Lemma node_processing_head state bs:
+  unzip1 (node_processing state bs).2 = (if bs is x::xs then state :: unzip1 (node_processing (next_state state x) xs).2 else [::]).
+Proof.
+by case: bs=> [|x xs]//=; rewrite node_processing_cons /=.
+Qed.
+
+Lemma node_processing_last s0 state bs b:
+  last s0 (unzip1 (node_processing state (rcons bs b)).2) = (node_processing state bs).1.
+Proof.
+elim: bs state s0 =>[| x s IHs] state s0 //=; first by rewrite node_processing_cons.
+rewrite node_processing_cons node_processing_cons1 /unzip1 map_cons /= -/unzip1.
+by rewrite (IHs (next_state state x)).
+Qed.
+
 (************************************************************)
 (** Sequence of elements which a node voted on             **)
 (************************************************************)
@@ -817,6 +855,70 @@ rewrite -voted_in_predC1 IHbb /=; case Hbbs: (b\in bbs); last by rewrite 2!andbF
 rewrite (nth_in_default_irrel (next_state state bb) state _); first by [].
 by rewrite size_map size_processing index_mem.
 Qed.
+
+Lemma voted_in_processing_exists state bseq b:
+  (b \in voted_in_processing state bseq) ->
+  exists s, (s \in (unzip1 (node_processing state bseq).2)) && (voted_on s b) && (b \in bseq).
+Proof.
+rewrite voted_in_processing_idx.
+move/andP => [H Hb]; exists (nth state (unzip1 (node_processing state bseq).2) (index b bseq)).
+rewrite H Hb 2!andbT; apply/(nthP state); exists (index b bseq)=> //.
+by rewrite size_map size_processing index_mem.
+Qed.
+
+Lemma voted_in_processing_sorted state bseq:
+  (sorted (fun b1 b2 => round b1 < round b2) (voted_in_processing state bseq)).
+Proof.
+move: state; elim bseq => [| b bs] //; rewrite /sorted=> IHs state //.
+rewrite voted_in_processing_cons.
+case Hv: (voted_on state b)=> //=.
+move: (IHs (next_state state b)).
+  case H:((voted_in_processing (next_state state b) bs))=> //= [x xs]->.
+rewrite andbT (@leq_trans (comparator (next_state state b)))=> //.
+- by rewrite (voting_comparator Hv) ltnSn.
+move: (mem_head x xs); rewrite -H; move/voted_in_processing_exists=> [s].
+move/andP=> [Hs]; move/andP: Hs=> [Hs]; rewrite voting_comparator_eq; move/andP => [Hlt Hbr] Hx.
+apply: (leq_trans _ Hlt); move: (node_processing_sorted (next_state state b) (bs)); rewrite /sorted.
+case Hunz1: (unzip1 (node_processing (next_state state b) bs).2) => [|y ys]; first by move: Hs; rewrite Hunz1 in_nil.
+move: (Hunz1); rewrite node_processing_head; case Hbs: bs => [|z zs]; first by move: Hx; rewrite Hbs in_nil.
+move/eqP; rewrite eqseq_cons; move/andP=>[Hy Hys]; rewrite -(eqP Hy).
+move/(order_path_min comparators_transitive); move/allP; rewrite Hunz1 in Hs.
+move: Hs; rewrite in_cons; case Hsy: (s == y).
+by move/eqP: Hsy=>->; move/eqP: Hy=><-.
+by move/orP=>[//|] Hin; apply.
+Qed.
+
+Lemma voted_in_processing_both state bseq b1 b2:
+  (b1 != b2) ->
+  (b1 \in (voted_in_processing state bseq)) ->
+  (b2 \in (voted_in_processing state bseq)) ->
+  (round b1 <= round b2) ->
+  subseq ([:: b1; b2]) (voted_in_processing state bseq).
+Proof.
+move => Hneq H1 H2 H12; move: (cat_take_drop_in H1); move/eqP=> Hsplit.
+move: (H2); rewrite -{1}Hsplit; rewrite mem_cat in_cons eq_sym.
+move/negbTE: Hneq=>->; rewrite orFb; move/orP=>[|].
+- rewrite -sub1seq=> H13; move: (subseq_refl [:: b1])=> H24; move: {H13 H24}(cat_subseq H13 H24)=> Hpref.
+  move: (subseq_trans Hpref (prefix_subseq _ (drop (index b1 (voted_in_processing state bseq)).+1 (voted_in_processing state bseq)))).
+  rewrite cat1s -catA cat1s Hsplit=> Hsub; move/subseq_sorted: Hsub; move/(_ _ _ (voted_in_processing_sorted state bseq)).
+  by move/(_ rounds_transitive); rewrite /= ltnNge H12.
+rewrite -sub1seq=> H24; move: (subseq_refl [::b1])=> H13; move: {H13 H24}(cat_subseq H13 H24)=> Hpref.
+move: (subseq_trans Hpref (suffix_subseq (take (index b1 (voted_in_processing state bseq)) (voted_in_processing state bseq)) _)).
+by rewrite 2!cat1s Hsplit.
+Qed.
+
+Lemma voted_in_processing_ltn state bseq b1 b2:
+  (b1 != b2) ->
+  (b1 \in (voted_in_processing state bseq)) ->
+  (b2 \in (voted_in_processing state bseq)) ->
+  (round b1 <= round b2) ->
+  round b1 < round b2.
+Proof.
+move => Hneq Hb1 Hb2 Hb12; move:(voted_in_processing_both Hneq Hb1 Hb2 Hb12)=> Hsub.
+move/subseq_sorted: Hsub; move/(_ _ _ (voted_in_processing_sorted state bseq)).
+by move/(_ rounds_transitive) => /=; rewrite andbT.
+Qed.
+
 
 (************************************************************)
 (** Node Aggregation                                       **)

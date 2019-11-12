@@ -795,4 +795,40 @@ case H: l=> [| x xs] /= Hlast //=.
 by apply (IH (validH_free Hvalid)).
 Qed.
 
+Definition get_block (bt : BlockTree) k : BType :=
+  if find k bt is Some b then b else GenesisBlock.
+Definition all_blocks (bt : BlockTree) := [seq get_block bt k | k <- dom bt].
+Definition all_chains bt := [seq compute_chain bt b | b <- all_blocks bt].
+
+Definition chain b bseq:=
+  path (fun b1 b2 => (parent b1 b2) && (round b2 == (round b1).+1)) b bseq.
+
+Notation "chain [ :: x1 ; x2 ; .. ; xn ]" := (chain x1 ( x2 :: .. [:: xn] ..))
+  (at level 0, format "chain [ :: '['  x1 ; '/'  x2 ; '/'  .. ; '/'  xn ']' ]"
+  ).
+
+Fixpoint three_slide (xs: seq BType) :=
+  match xs with
+  | x :: (y :: z :: ts as l) => (x, y , z) :: (three_slide l)
+  | _ => [::]
+  end.
+
+Fixpoint highest_3_chain_aux (s: seq (BType * BType * BType)) n :=
+  match s with
+  | (b1, b2, b3) :: bs => if ((round b1).+1 == (round b2)) && ((round b2).+1 == (round b3)) then
+                          (highest_3_chain_aux bs (round b3))
+                        else
+                          (highest_3_chain_aux bs n)
+  | _ => n
+  end.
+
+Definition highest_3_chain (s: seq BType) :=
+  highest_3_chain_aux (three_slide s) genesis_round.
+
+Definition take_better_bc bc2 bc1 :=
+  if ((highest_3_chain bc2) > (highest_3_chain bc1)) then bc2 else bc1.
+
+Definition btChain bt : Blockchain :=
+  foldr take_better_bc ([::]) (all_chains bt).
+
 End Forests.

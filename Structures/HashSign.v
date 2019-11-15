@@ -206,9 +206,9 @@ Variable T: Type.
 Variable H: signType T PublicKey Signature.
 
 (* Honest nodes are nodes that conditionally sign things*)
-Definition honest (condition: pred T)(a: Address) :=
-  fun (t:T)(p: PublicKey)(s: Signature) =>
+Definition honest (condition: pred H)(a: Address) :=
+  fun (h:H)(p: PublicKey)(s: Signature) =>
     (hash_op Address p) == a ->
-    verify_op (hash_op H t) p s -> condition t.
+    verify_op (h) p s -> condition h.
 
 End HonestNodes.

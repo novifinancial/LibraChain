@@ -1,5 +1,5 @@
 From mathcomp.ssreflect
-Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq fintype path.
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq fintype path choice.
 Require Import Eqdep.
 From fcsl
 Require Import pred prelude ordtype pcm finmap unionmap heap.
@@ -19,10 +19,10 @@ Require Import Recdef.
 (************************************************************)
 Section Forests.
 
-Variable Hash : ordType.
-Variables (PublicKey: Type) (Signature: eqType) (Address: hashType PublicKey).
+Variable Hash : countType.
+Variables (PublicKey: countType) (Signature: countType) (Address: hashType PublicKey).
 
-Parameters (Command NodeTime: Type).
+Parameters (Command NodeTime: countType).
 
 (* The Block Data (w/o signatures) *)
 Notation BDataType := (BlockData Hash Signature Address Command NodeTime).
@@ -49,7 +49,7 @@ Definition qc_hash b := (block_hash (qc_vote_data (qc_of b))).
 Definition genesis_round := (round (block_data GenesisBlock)).
 
 (* In fact, it's a forest, as it also keeps orphan blocks *)
-Definition BlockTree := union_map Hash BType.
+Definition BlockTree := union_map [ordType of Hash] BType.
 
 Implicit Type bt : BlockTree.
 
@@ -830,5 +830,6 @@ Definition take_better_bc bc2 bc1 :=
 
 Definition btChain bt : Blockchain :=
   foldr take_better_bc ([::]) (all_chains bt).
+
 
 End Forests.

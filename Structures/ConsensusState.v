@@ -1,5 +1,5 @@
 From mathcomp.ssreflect
-Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq fintype path.
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq fintype path choice.
 Require Import Eqdep.
 From fcsl
 Require Import pred prelude ordtype pcm finmap unionmap heap.
@@ -16,10 +16,10 @@ Unset Printing Implicit Defensive.
 (************************************************************)
 Section State.
 
-Variable Hash : ordType.
-Variables (PublicKey: Type) (Signature: eqType) (Address: hashType PublicKey).
+Variable Hash : countType.
+Variables (PublicKey: countType) (Signature: countType) (Address: hashType PublicKey).
 
-Parameters (Command NodeTime: Type).
+Variables (Command NodeTime: countType).
 
 (* The Block Data (w/o signatures) *)
 Notation BDataType := (BlockData Hash Signature Address Command NodeTime).
@@ -68,6 +68,10 @@ Proof. by move => []. Qed.
 
 Definition cs_eqMixin := CanEqMixin can_cs_nats.
 Canonical cs_eqType := EqType _ cs_eqMixin.
+Definition cs_choiceMixin := CanChoiceMixin can_cs_nats.
+Canonical cs_choiceType := ChoiceType _ cs_choiceMixin.
+Definition cs_countMixin := CanCountMixin can_cs_nats.
+Canonical cs_countType := CountType _ cs_countMixin.
 
 Definition genesis_state := mkConsensusState genesis_round genesis_round.
 

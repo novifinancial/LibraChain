@@ -12,3 +12,4 @@ Structures/ConsensusState.v
 Structures/HashSign.v
 Structures/BlockTree.v
 Structures/BFTFacts.v
+Properties/Safety.v

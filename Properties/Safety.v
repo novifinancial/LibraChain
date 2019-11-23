@@ -1,13 +1,46 @@
 From mathcomp.ssreflect
 Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq choice fintype path finset.
 Require Import Eqdep.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Section SeqSubMissing.
+Variables (T : choiceType) (s : seq T).
+Local Notation sT := (seq_sub s).
+
+Variable (D: pred T).
+
+Lemma card_seq_sub : uniq s -> #|[set x:sT| D (val x)]| = size (filter D s).
+Proof.
+move=> Us; case: (pickP (fun x: sT => D(val x)))=> [x Px |P0].
+- rewrite -(card_seq_sub (filter_uniq D Us)).
+  move/valP: (x)=> Hx.
+  have: (val x \in filter D s); first by rewrite mem_filter Px Hx.
+  rewrite -(codom_val (seq_sub_subFinType (filter D s))).
+  move/codomP=> [x0 Hxx0]; pose f := fun (x:sT) => insubd x0 (val x).
+  rewrite -(@card_in_imset _ _ f); first apply eq_card.
+  - move=> x1; rewrite inE; apply/idP; apply/imsetP.
+    move/valP: (x1); rewrite mem_filter; move/andP=> [Dx1 Hx1].
+    exists (insubd x (val x1)); last by rewrite /f /= insubdK; [rewrite valKd| rewrite Hx1 ].
+    by rewrite /insubd (insubT _) inE /= Dx1.
+  move=> y2 y1 Hy2 Hy1; rewrite in_set in Hy1; rewrite in_set in Hy2.
+  rewrite /f /insubd (insubT _) /=; first by  rewrite mem_filter (valP y2) Hy2.
+  rewrite (insubT _) /=; first by rewrite mem_filter (valP y1) Hy1.
+  move=> Hyp1 Hyp2; case; apply val_inj.
+rewrite cardsE; move/eq_card0: (P0)=>->; rewrite size_filter.
+apply/eqP/negPn; rewrite eq_sym -lt0n -has_count.
+rewrite negbT //; apply/hasP; move => [x Hx Dx].
+move: Hx; rewrite -(codom_val (seq_sub_subFinType s))=> Hcd.
+by move/codomP: Hcd=> [x0 Hxx0]; move: (P0 x0); rewrite -Hxx0 Dx.
+Qed.
+
+End SeqSubMissing.
+
 From fcsl
 Require Import pred prelude ordtype pcm finmap unionmap heap.
 From LibraChain
 Require Import SeqFacts Chains HashSign Blocks ConsensusState BlockTree BFTFacts.
-Set Implicit Arguments.
-Unset Strict Implicit.
-Unset Printing Implicit Defensive.
 
 Section Safety.
 (* We require Hashes, Addresses, Signatures and PublicKeys to be numbers in *)
@@ -44,15 +77,14 @@ Variable f: nat.
 
 (* boolean predicate for all signatures in a sequence to be valid *)
 Definition all_valid (h: Hash) (s: seq (PublicKey * Signature)) :=
-  all (fun ps => (@verify_op _ _ _ BSType h (fst ps) (snd ps))) s && (size s >= (2*f).+1).
+  all (fun ps => (@verify_op _ _ _ BSType h (fst ps) (snd ps))) s.
 
 Definition qc_valid (qc: QC) :=
-  all_valid (block_hash (qc_vote_data qc)) (qc_votes qc).
+  all_valid (block_hash (qc_vote_data qc)) (qc_votes qc) && (uniq (qc_votes qc)).
 
 Definition source_valid (block: BType) :=
   let: (p, s) := (block_source block) in
        (@verify_op _ _ _ BSType (#block) p s).
-
 
 Notation BlockStore := (BlockTree inj_hashB verifB).
 
@@ -91,11 +123,40 @@ Definition voted_by_node(n: NodeState) :=
 
 Definition addr_of(n: NodeState) := (hash_op Address (public_key n)).
 
+Definition qc_keys(qc: QC) :=
+  unzip1 (qc_votes qc).
+
 Definition qc_addresses(qc: QC) :=
-  map (hash_op Address) (unzip1 (qc_votes qc)).
+  map (hash_op Address) (qc_keys qc).
 
 Variable validator_nodes: seq NodeState.
+Hypothesis Huniq: uniq validator_nodes.
+Hypothesis inj_keys: {in validator_nodes, injective public_key}.
+
 Definition Validator:= seq_sub validator_nodes.
+
+Definition node_keys :=
+  map public_key validator_nodes.
+
+Definition NodeKey := seq_sub node_keys.
+
+Lemma mem_node_keys (v: Validator):
+  (public_key (val v)) \in node_keys.
+Proof.
+rewrite /node_keys; apply/mapP; exists (val v)=> //.
+by move/valP: (v).
+Qed.
+
+Definition to_pk (v: Validator): NodeKey :=
+  Sub (public_key (val v)) (mem_node_keys v).
+
+Lemma inj_to_pk : injective to_pk.
+Proof.
+move=> x1 x2; case; by move/(inj_keys (valP x1))/val_inj.
+Qed.
+
+Definition qc_relevant(qc: QC):=
+  filter (fun pk => pk \in node_keys) (undup (qc_keys qc)).
 
 Hypothesis Huniq_vals: uniq validator_nodes.
 
@@ -110,7 +171,7 @@ Section ValidBlocks.
 (* signatures *)
 Record valid_block : Type := mkValid {
     block :> BlockFinType;
-    _: source_valid (val block) && qc_valid (qc_of (val block));
+    _: source_valid (val block) && qc_valid (qc_of (val block)) && (size (qc_relevant (qc_of (val block))) == 2*f+1);
 }.
 
 Canonical valid_block_subType := Eval hnf in [subType for block].
@@ -128,16 +189,16 @@ Canonical valid_block_subFinType := Eval hnf in [subFinType of valid_block].
 Implicit Type vb : valid_block.
 
 Definition valid vb mkB : valid_block :=
-  mkB (let: mkValid _ vbP := vb return (source_valid (ssval (val vb))) && qc_valid (qc_of (ssval (val vb))) in vbP).
+  mkB (let: mkValid _ vbP := vb return (source_valid (val (val vb))) && qc_valid (qc_of (val (val vb))) && (size (qc_relevant (qc_of (val (val vb)))) == 2*f+1) in vbP).
 
 Lemma valid_blockE vb : valid (fun sP => @mkValid vb sP) = vb.
 Proof. by case: vb. Qed.
 
 Definition node_in_votes(n: NodeState): pred valid_block :=
-  fun vb => addr_of n \in (qc_addresses (qc_of (ssval (val vb)))).
+  fun vb => addr_of n \in (qc_addresses (qc_of (val (val vb)))).
 
 Definition block_in_voting(n: NodeState): pred valid_block :=
-  fun (vb:valid_block) => has (fun b => #b == (qc_hash (ssval (val vb)))) (voted_by_node n).
+  fun (vb:valid_block) => has (fun b => #b == (qc_hash (val (val vb)))) (voted_by_node n).
 
 Definition honest : pred NodeState := fun n =>
   [set vb |node_in_votes n vb] \subset [set vb|block_in_voting n vb].
@@ -145,6 +206,61 @@ Definition honest : pred NodeState := fun n =>
 Hypothesis BFT:
   (#|[set x : Validator |honest (val x)]| >= (2*f).+1) &&
   (size validator_nodes == (3*f).+1).
+
+Lemma nodes_in_votes_relevantE vb:
+  [set v: Validator| node_in_votes (val v) vb] =
+  [set v: Validator| (public_key (val v)) \in (qc_keys (qc_of (val (val vb))))].
+Proof.
+apply eq_finset=> x/=.
+rewrite /node_in_votes /qc_addresses /addr_of mem_map //.
+by apply hash_inj.
+Qed.
+
+Lemma validators_in_votes vb:
+  #|[set v: Validator| node_in_votes (val v) vb]| == (2*f).+1.
+Proof.
+rewrite -addn1.
+move/valP/andP: (vb)=>[_]; move/eqP=><-; rewrite nodes_in_votes_relevantE.
+rewrite (@card_seq_sub _ _ (fun (v:NodeState) => (public_key v) \in _) Huniq).
+rewrite -(size_map public_key) -uniq_size_uniq.
+- rewrite map_inj_in_uniq ?filter_uniq //.
+  move=> x y; rewrite 2!mem_filter; move/andP=>[_ Hx]; move/andP=>[_ Hy].
+  by apply (inj_keys Hx).
+- by rewrite /qc_relevant filter_uniq // undup_uniq.
+move=> x; rewrite /qc_relevant /node_keys mem_filter mem_undup.
+by rewrite -filter_map mem_filter /= andbC.
+Qed.
+
+Lemma honest_in_two_blocks (vb1 vb2: valid_block):
+    exists (x:Validator), (node_in_votes (val x) vb1 && node_in_votes (val x) vb2 && honest (val x)).
+Proof.
+move: (validators_in_votes vb1) (validators_in_votes vb2)=> Hvb1 Hvb2.
+move/andP: (conj Hvb1 Hvb2)=> H12; move: {Hvb1 Hvb2 H12}(intersectionP Huniq BFT H12).
+move=>[x]; rewrite 4!inE; move/andP => [H12 Hhx]; move/andP: {H12}H12=>[H1 H2].
+by exists x; rewrite Hhx H1 H2.
+Qed.
+
+Lemma honest_voted_two_blocks (vb1 vb2: valid_block):
+  exists (n: Validator), (block_in_voting (val n) vb1) && (block_in_voting (val n) vb2).
+Proof.
+move: (honest_in_two_blocks vb1 vb2)=> [x]; move/andP=> [H12 Hh].
+move/andP: H12=> [H1 H2]; exists x.
+move/subsetP: (Hh); move/(_ vb1); rewrite inE H1 inE=> -> //.
+by move/subsetP: Hh; move/(_ vb2); rewrite inE H2 inE=> -> //.
+Qed.
+
+Lemma block_in_voting_processingP (n:NodeState) vb:
+  (block_in_voting n vb) ->
+  exists b, (#b == (qc_hash (val (val vb)))) &&
+    (b \in (voted_in_processing GenesisState (block_log n))).
+Proof.
+by move/hasP=> [b Hvb Hhb]; exists b; rewrite Hhb andTb.
+Qed.
+
+
+
+
+
 End ValidBlocks.
 
 End Safety.

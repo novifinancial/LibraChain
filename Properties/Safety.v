@@ -197,8 +197,14 @@ Proof. by case: vb. Qed.
 Definition node_in_votes(n: NodeState): pred valid_block :=
   fun vb => addr_of n \in (qc_addresses (qc_of (val (val vb)))).
 
+Notation "'qc#' vb" :=
+  (qc_hash (val (val (vb)))) (at level 40).
+
+Notation "'qc_round' vb" :=
+  (block_round (qc_vote_data (qc_of (val (val (vb)))))) (at level 40).
+
 Definition block_in_voting(n: NodeState): pred valid_block :=
-  fun (vb:valid_block) => has (fun b => #b == (qc_hash (val (val vb)))) (voted_by_node n).
+  fun (vb:valid_block) => has (fun b => (#b == qc# vb) && (round b == (qc_round vb))) (voted_by_node n).
 
 Definition honest : pred NodeState := fun n =>
   [set vb |node_in_votes n vb] \subset [set vb|block_in_voting n vb].
@@ -251,15 +257,30 @@ Qed.
 
 Lemma block_in_voting_processingP (n:NodeState) vb:
   (block_in_voting n vb) ->
-  exists b, (#b == (qc_hash (val (val vb)))) &&
+  exists b, ((#b == qc# vb) && (round b == qc_round vb))  &&
     (b \in (voted_in_processing GenesisState (block_log n))).
 Proof.
-by move/hasP=> [b Hvb Hhb]; exists b; rewrite Hhb andTb.
+by move/hasP=> [b Hvb Hhb]; exists b; rewrite Hhb.
 Qed.
 
-
-
-
+(* This is S2 in LibraBFT v2. The statement on state hashes is trivial *)
+(* editing block_in_voting, and non-essential for the proof *)
+Lemma valid_blocks_same_round_equal (vb1 vb2: valid_block):
+  (qc_round vb1 == qc_round vb2) -> qc# vb1 == qc# vb2.
+Proof.
+move=> Hr.
+move: (honest_voted_two_blocks vb1 vb2)=> [n]; move/andP=> [H1 H2].
+move/block_in_voting_processingP: H1=> [b1 /andP [Hb1 Hproc1]].
+move/block_in_voting_processingP: H2=> [b2 /andP [Hb2 Hproc2]].
+case H12: (b1 == b2).
+- by move/andP: Hb1=> [/eqP <- _]; move/andP: Hb2=> [/eqP <- _]; move/eqP: H12=>->.
+case/orP: (leq_total (round b1) (round b2)).
+- move/(voted_in_processing_ltn (negbT H12) Hproc1 Hproc2); move/ltn_eqF.
+  by move/andP: Hb1=>[_ /eqP ->]; move/andP: Hb2=>[_ /eqP ->]; rewrite Hr.
+rewrite eq_sym in H12.
+move/(voted_in_processing_ltn (negbT H12) Hproc2 Hproc1); move/ltn_eqF.
+by move/andP: Hb1=>[_ /eqP ->]; move/andP: Hb2=>[_ /eqP ->]; rewrite eq_sym Hr.
+Qed.
 
 End ValidBlocks.
 

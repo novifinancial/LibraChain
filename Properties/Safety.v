@@ -65,7 +65,7 @@ Notation QC := (QuorumCert Hash Signature (Phant Address)).
 Canonical BDHType := Eval hnf in (Block_hashType inj_hashB).
 Canonical BSType := Eval hnf in (Block_signType inj_hashB verifB).
 
-Implicit Type b: BType.
+Implicit Type b: BDataType.
 
 Notation "# b" := (hashB b) (at level 20).
 
@@ -116,10 +116,10 @@ Canonical ns_choiceType := ChoiceType _ ns_choiceMixin.
 Definition ns_countMixin := CanCountMixin can_ns_components.
 Canonical ns_countType := CountType _ ns_countMixin.
 
-Notation GenesisState := (genesis_state inj_hashB verifB).
+Notation GenesisState := (genesis_state Hash Signature Address Command NodeTime).
 
 Definition voted_by_node(n: NodeState) :=
-  (voted_in_processing GenesisState (block_log n)).
+  (voted_in_processing GenesisState [seq block_data i | i <- block_log n]).
 
 Definition addr_of(n: NodeState) := (hash_op Address (public_key n)).
 
@@ -258,7 +258,7 @@ Qed.
 Lemma block_in_voting_processingP (n:NodeState) vb:
   (block_in_voting n vb) ->
   exists b, ((#b == qc# vb) && (round b == qc_round vb))  &&
-    (b \in (voted_in_processing GenesisState (block_log n))).
+    (b \in (voted_in_processing GenesisState [seq block_data i | i <- block_log n])).
 Proof.
 by move/hasP=> [b Hvb Hhb]; exists b; rewrite Hhb.
 Qed.
@@ -281,6 +281,20 @@ rewrite eq_sym in H12.
 move/(voted_in_processing_ltn (negbT H12) Hproc2 Hproc1); move/ltn_eqF.
 by move/andP: Hb1=>[_ /eqP ->]; move/andP: Hb2=>[_ /eqP ->]; rewrite eq_sym Hr.
 Qed.
+
+Lemma valid_qc_ancestor_is_parent (n: NodeState) (block: BType) vb:
+  parent block (val (val vb)) ->
+  block_in_voting n vb ->
+  ((#block == qc# vb) && (round block == qc_round vb)) &&
+  (block_data block \in (voted_in_processing GenesisState [seq block_data i | i<- block_log n])).
+Proof.
+move=> Hpar.
+move/block_in_voting_processingP=> [b0 /andP[/andP [Hb0 Hround0] Hproc0]].
+move: (Hb0); move/eqP: Hpar=><-; move/eqP/inj_hashB=> Hbb0.
+by rewrite -Hbb0 eq_refl Hround0.
+Qed.
+
+
 
 End ValidBlocks.
 

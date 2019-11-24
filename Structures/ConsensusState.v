@@ -33,13 +33,13 @@ Variable verifB: Hash -> PublicKey -> Signature -> bool.
 Notation BType := (BlockType inj_hashB verifB).
 Notation QC := (QuorumCert Hash Signature (Phant Address)).
 
-Implicit Type b: BType.
+Implicit Type b: BDataType.
 
-Parameter GenesisBlock : BType.
+Parameter GenesisBlock : BDataType.
 
-Definition genesis_round := (round (block_data GenesisBlock)).
+Definition genesis_round := (round GenesisBlock).
 
-Definition qc_of b := (proof (block_data b)).
+Definition qc_of b := (proof b).
 
 Lemma rounds_transitive:
   transitive (fun b1 b2 => (round b1) < (round b2)).
@@ -153,7 +153,7 @@ Proof.
 by apply/(sameP idP); apply: votable_updateP.
 Qed.
 
-Definition voting_rule state (b: BType) :=
+Definition voting_rule state (b: BDataType) :=
   let after_update := update state (qc_of b) in
   if votable (after_update) b then
     let newState :=
@@ -393,7 +393,7 @@ Qed.
 (** Voting in Sequence                                     **)
 (************************************************************)
 
-Implicit Type bseq: seq BType.
+Implicit Type bseq: seq BDataType.
 
 (* node_processing is a slight modification on a scanleft of the voting rules
 over a seq of block *)

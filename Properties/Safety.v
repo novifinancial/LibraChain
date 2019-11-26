@@ -294,6 +294,9 @@ move: (Hb0); move/eqP: Hpar=><-; move/eqP/inj_hashB=> Hbb0.
 by rewrite -Hbb0 eq_refl Hround0.
 Qed.
 
+Definition vb_parent (vb1 vb2: valid_block) :=
+  parent (val (val vb1)) (val (val vb2)).
+
 
 
 End ValidBlocks.

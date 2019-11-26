@@ -25,6 +25,91 @@ Proof.
 by case: s.
 Qed.
 
+Lemma subseq_re_cons x (s1 s:seq T):
+  uniq s ->
+  subseq (x::s1) s ->
+  subseq s1 (drop (index x s).+1 s).
+Proof.
+elim: s x s1=>[|y ys IHs] x s1 //=.
+case Hxy: (y == x); move/andP=>[Hnin Huniq];
+rewrite fun_if eq_sym Hxy ?drop0 //.
+by apply IHs.
+Qed.
+
+Lemma mask_rcons b m x s :
+  size s = size m ->
+  mask (rcons m b) (rcons s x) = mask m s ++ nseq b x.
+Proof.
+move: s m; apply seq_ind2; first by case b.
+move=> x0 y s t Hst; rewrite 2!rcons_cons mask_cons=>->.
+by rewrite mask_cons catA.
+Qed.
+
+Lemma subseq_rconsE x y s1 s:
+  subseq (rcons s1 x) (rcons s y) =
+  subseq (rcons s1 x) s || (subseq s1 s && (x == y)).
+Proof.
+apply/subseqP/orP.
+- case; case; first by move/eqP; rewrite eq_sym ?eqn0Ngt size_rcons.
+  move=> a l; rewrite lastI; move/eqP; rewrite 2!size_rcons eqSS.
+  move/eqP=> Hsz; rewrite mask_rcons ?Hsz //.
+  case Hlast: (last a l)=> /= Hcons; [right|left]; last
+  by rewrite cats0 in Hcons; apply/subseqP; exists (belast a l).
+  move/eqP: Hcons; rewrite cats1 eqseq_rcons; move/andP=>[H ->].
+  by rewrite andbT; apply/subseqP; exists (belast a l); last apply/eqP.
+case=>[H|].
+- by apply/subseqP; apply (subseq_trans H); apply subseq_rcons.
+move/andP=> [/subseqP[m Hsz Hm] Hxy]; exists (rcons m true).
+- by rewrite 2!size_rcons; apply/eqP; rewrite eqSS Hsz.
+rewrite mask_rcons //= cats1; apply/eqP; rewrite eqseq_rcons Hxy.
+by rewrite andbT Hm.
+Qed.
+
+Lemma take_index x s:
+  take (index x s).+1 s =
+  if (x \in s) then
+    rcons (take (index x s) s) x
+  else s.
+Proof.
+case H: (x \in s); move/idP: (H); rewrite -index_mem.
+- by move/(take_nth x); rewrite (nth_index _ (idP H)).
+by move/negP; rewrite -ltnNge; move/ltnW; move/take_oversize.
+Qed.
+
+Lemma subseq_re_rcons x s1 s:
+  uniq s ->
+  subseq (rcons s1 x) s ->
+  subseq (rcons s1 x) (take (index x s).+1 s).
+Proof.
+elim/last_ind: s s1 x=> [|ys y IHs] s1 x Huniq; first by rewrite subseq0.
+rewrite rcons_uniq in Huniq; move/andP: Huniq=> [Hnin Huniq].
+rewrite subseq_rconsE; case H: (subseq (rcons s1 x) ys).
+- have Hx: (x \in ys).
+  - move: (cat_subseq (sub0seq s1) (subseq_refl [::x])).
+    by rewrite cat0s cats1; move/subseq_trans/(_ H); rewrite sub1seq.
+  have Hxs: (x \in (rcons ys y)); first by rewrite mem_rcons inE Hx orbT.
+  move: (IHs s1 x Huniq H); rewrite 2!take_index Hx Hxs /=.
+  by rewrite -[rcons ys y]cats1 index_cat Hx take_cat index_mem Hx.
+rewrite orFb; move/andP=> [Hsub Hxy].
+rewrite take_oversize ?orFb ?subseq_rconsE.
+- by rewrite Hsub Hxy orbT.
+move: (Hnin); rewrite -{1}(eqP Hxy)=> Hxnin.
+rewrite -{2}[rcons ys y]cats1 index_cat (negbTE Hxnin).
+by rewrite leq_eqVlt; apply/orP; left; rewrite size_rcons (eqP Hxy) /= eq_refl addn0.
+Qed.
+
+Lemma subseq_stitch x (s1 s2 s: seq T):
+  uniq s ->
+  subseq (rcons s1 x) s ->
+  subseq (x::s2) s ->
+  subseq (s1 ++ x :: s2) s.
+Proof.
+move=> Huniq Hpref Hsuf.
+rewrite -(cat_take_drop (index x s).+1 s) -cat_rcons.
+apply: cat_subseq; first by apply: subseq_re_rcons.
+by apply: subseq_re_cons.
+Qed.
+
 Lemma rem_neq x y ls :
   x != y -> x \in ls -> x \in seq.rem y ls.
 Proof.

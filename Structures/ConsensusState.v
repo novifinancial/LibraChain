@@ -41,12 +41,20 @@ Definition genesis_round := (round GenesisBlock).
 
 Definition qc_of b := (proof b).
 
+Definition qc_hash b := (block_hash (qc_vote_data (qc_of b))).
+Definition qc_round b := (block_round (qc_vote_data (qc_of b))).
+
+Definition parent b1 b2 := (hashB b1 == qc_hash b2) && (round b1 == qc_round b2).
+
 Lemma rounds_transitive:
   transitive (fun b1 b2 => (round b1) < (round b2)).
 Proof.
 by move=> b1 b2 b3; apply ltn_trans.
 Qed.
 
+Lemma rounds_irreflexive:
+  irreflexive (fun b1 b2 => (round b1) < (round b2)).
+Proof. by move=> b; rewrite ltnn. Qed.
 
 (************************************************************)
 (** Consensus State                                        **)
@@ -254,13 +262,13 @@ Qed.
 
 Lemma next_state_maxn state b:
   (next_state state b) =
-  let: u_pbr := (maxn (preferred_block_round state) (block_round (qc_vote_data (qc_of b)))) in
+  let: u_pbr := (maxn (preferred_block_round state) (qc_round b)) in
   mkConsensusState
     (if (round b) >= maxn ((last_vote_round state).+1) u_pbr then round b else last_vote_round state)
     u_pbr.
 Proof.
 rewrite /next_state /voting_rule update_maxn.
-set pbr:= (maxn (preferred_block_round state) (block_round (qc_vote_data (qc_of b)))).
+set pbr:= (maxn (preferred_block_round state) (qc_round b)).
 rewrite /votable /= -geq_max.
 by case H: (maxn (last_vote_round state).+1 pbr <= round b).
 Qed.
@@ -342,7 +350,7 @@ Qed.
 Lemma next_stateC state b c:
   next_state (next_state state b) c =
   if (~~ voted_on state b || ((round b < round c) &&
-     (block_round (qc_vote_data (qc_of c)) <= round c))) then
+     ((qc_round c) <= round c))) then
     next_state (update state (qc_of b)) c
   else
     (update (next_state state b) (qc_of c)).
@@ -384,7 +392,7 @@ Lemma voted_on_maxn state b:
   (voted_on state b) =
   (round b >= maxn
                (maxn ((last_vote_round state).+1) (preferred_block_round state))
-               (block_round (qc_vote_data (qc_of b)))).
+               (qc_round b)).
 Proof.
 by rewrite !geq_max -andbA ineq_voted_on.
 Qed.
@@ -541,7 +549,7 @@ Qed.
 
 Lemma non_voting_comparator state x:
   ~~ voted_on state x ->
-  comparator (next_state state x) = maxn (comparator state) (block_round (qc_vote_data (qc_of x))).
+  comparator (next_state state x) = maxn (comparator state) (qc_round x).
 Proof.
 move=>Hnv; rewrite next_state_lvr_if; move/negbTE: (Hnv)=>->.
 by rewrite /comparator update_maxn /= maxnA.
@@ -549,7 +557,7 @@ Qed.
 
 Lemma voting_comparator_eq state b:
     (voted_on state b) =
-    ((comparator state <= round b) && (block_round (qc_vote_data (qc_of b)) <= round b))
+    ((comparator state <= round b) && ((qc_round b) <= round b))
     .
 Proof.
 by rewrite /comparator geq_max -andbA -ineq_voted_on.
@@ -693,7 +701,7 @@ case Hb: (voted_on state b); [ rewrite (next_state_lvr_round Hb) (voting_compara
   [rewrite eq_sym|]; rewrite Hbc orFb; move/negbTE=>->/=.
 - move: (Hc); rewrite voting_comparator_eq; move/andP=>[Hcpc Hbrc] /=.
   rewrite Hcpc; move/negbT: (Hb); rewrite voting_comparator_eq negb_and.
-  case Hbrb: ((block_round (qc_vote_data (qc_of b))) <= round b); [rewrite orbF andbT andTb -ltnNge => Hcpb | rewrite andbF andTb => _ ].
+  case Hbrb: ((qc_round b) <= round b); [rewrite orbF andbT andTb -ltnNge => Hcpb | rewrite andbF andTb => _ ].
   - by rewrite ltnNge; move/ltnW: (leq_trans Hcpb Hcpc)=> Hbc; rewrite Hbc (leq_trans Hbrb Hbc) /=.
   move/negbT: Hbrb; rewrite -ltnNge=> Hbrb; case Hqbc: (block_round (qc_vote_data (qc_of b)) <= round c); first by [].
   move/negbT: Hqbc; rewrite -ltnNge=> Hqbc; rewrite [maxn (round c).+1 _]maxnCA; move/maxn_idPr: (Hqbc)=>->.
@@ -745,7 +753,7 @@ Lemma next_state_repeat state b:
 Proof.
 rewrite next_state_lvr_if voting_next_N update_maxn next_state_pbr_update update_maxn  /= -maxnA maxnn.
 rewrite -/(preferred_block_round {| last_vote_round := last_vote_round state;
-  preferred_block_round := maxn (preferred_block_round state) (block_round (qc_vote_data (qc_of b))) |}).
+  preferred_block_round := maxn (preferred_block_round state) (qc_round b) |}).
 rewrite -update_maxn -next_state_pbr_update.
 have H: forall s, s = {| last_vote_round := (last_vote_round s);
                     preferred_block_round:= (preferred_block_round s)|}; first by case.
@@ -892,6 +900,13 @@ by move/eqP: Hsy=>->; move/eqP: Hy=><-.
 by move/orP=>[//|] Hin; apply.
 Qed.
 
+Lemma voted_in_processing_uniq state bseq:
+  uniq (voted_in_processing state bseq).
+Proof.
+apply (sorted_uniq rounds_transitive rounds_irreflexive).
+apply voted_in_processing_sorted.
+Qed.
+
 Lemma voted_in_processing_both state bseq b1 b2:
   (b1 != b2) ->
   (b1 \in (voted_in_processing state bseq)) ->
@@ -923,6 +938,39 @@ move/subseq_sorted: Hsub; move/(_ _ _ (voted_in_processing_sorted state bseq)).
 by move/(_ rounds_transitive) => /=; rewrite andbT.
 Qed.
 
+Lemma voted_in_processing_parent state bseq b1 b2:
+  b1 != b2 ->
+  parent b1 b2 ->
+  (b1 \in (voted_in_processing state bseq)) ->
+  (b2 \in (voted_in_processing state bseq)) ->
+  subseq ([:: b1; b2]) (voted_in_processing state bseq).
+Proof.
+move=> Hneq Hpar Hb1 Hb2; apply voted_in_processing_both=> //.
+move: (voted_in_processing_exists Hb2)=> [s /andP [/andP [_ H] _]].
+move: H; rewrite ineq_voted_on; move/andP=>[_]; move/andP=>[_].
+by apply leq_trans; move/andP: Hpar=> [_]; move/eqP=>->.
+Qed.
+
+Lemma voted_in_processing_subseq state bseq vote_seq v0:
+  path parent v0 vote_seq ->
+  (v0 \notin vote_seq) && uniq vote_seq ->
+  {subset (v0::vote_seq) <= (voted_in_processing state bseq)} ->
+  subseq (v0::vote_seq) (voted_in_processing state bseq).
+Proof.
+move: state bseq v0; elim vote_seq=> /= [|v vs IHvs] state bseq v0.
+- by move=> _ _; rewrite sub1seq; apply; rewrite mem_seq1 eq_refl.
+move/andP=> [Hpv0 Hpath]; move/andP=> [Hv0 Huniq] Hsst.
+have Hssv: {subset [:: v & vs] <= voted_in_processing state bseq}.
+- by move=> x Hx; apply Hsst; rewrite inE Hx orbT.
+move: (IHvs state bseq v Hpath Huniq Hssv)=> IHs.
+move: (Hv0); rewrite inE negb_or; move/andP=> [Hvv0 _].
+have Hproc0: v0 \in voted_in_processing state bseq.
+- by apply: Hsst; rewrite inE eq_refl.
+have Hproc1: v \in voted_in_processing state bseq.
+- by apply: Hsst; rewrite 2!inE eq_refl orbT.
+move: (voted_in_processing_parent Hvv0 Hpv0 Hproc0 Hproc1)=> Hss0.
+by rewrite -cat1s; apply: (subseq_stitch (voted_in_processing_uniq _ _)).
+Qed.
 
 (************************************************************)
 (** Node Aggregation                                       **)

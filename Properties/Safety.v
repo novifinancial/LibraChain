@@ -307,6 +307,22 @@ Definition vb_parent (vb1 vb2: valid_block) :=
 Definition vb_chained (vb1 vb2: valid_block) :=
   direct_parent vb1 vb2.
 
+(* Lemma S3 *)
+Lemma three_chain_higher (b0 b1 b2 b c : valid_block):
+  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b c) ->
+  (qc_round c > qc_round b2) ->
+  (qc_round b >= qc_round b0).
+Proof.
+move/andP=> [Hpath Hparbc].
+move: (honest_voted_two_blocks b2 c)=> [n /andP[Hvot2 Hvotc] Hqc].
+move: (valid_qc_ancestor_is_parent Hparbc Hvotc).
+move/andP=> [Hbc_rel Hbvot]; move: Hpath; rewrite /vb_chained.
+rewrite -cat1s cat_path; move/andP=>[Hb0b1]; rewrite /= andbT; move/andP=> [Hpar12 Hrd12].
+move: Hb0b1; rewrite /= andbT; move/andP=> [Hpar01 Hrd01].
+move: (valid_qc_ancestor_is_parent Hpar12 Hvot2).
+move/andP => [H12_rel H1vot].
+have Hb1b: round b1 < round b; first by move/andP: Hbc_rel=> [_ /eqP->]; move/andP: H12_rel=> [_ /eqP->].
+
 
 
 End ValidBlocks.

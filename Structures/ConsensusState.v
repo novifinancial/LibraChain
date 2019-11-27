@@ -43,6 +43,7 @@ Definition qc_of b := (proof b).
 
 Definition qc_hash b := (block_hash (qc_vote_data (qc_of b))).
 Definition qc_round b := (block_round (qc_vote_data (qc_of b))).
+Definition qc_parent_round b := (parent_block_round (qc_vote_data (qc_of b))).
 
 Definition parent b1 b2 := (hashB b1 == qc_hash b2) && (round b1 == qc_round b2).
 
@@ -86,7 +87,7 @@ Definition genesis_state := mkConsensusState genesis_round genesis_round.
 Implicit Type state: ConsensusState.
 
 Definition update state (qc: QC) :=
-  let: round := (block_round (qc_vote_data qc)) in
+  let: round := (parent_block_round (qc_vote_data qc)) in
   if (round > preferred_block_round state) then
     mkConsensusState (last_vote_round state) (round)
   else
@@ -96,39 +97,39 @@ Lemma update_eq_lvr state qc :
   last_vote_round (update state qc) = last_vote_round state.
 Proof.
 rewrite /update.
-by case (block_round (qc_vote_data qc) > preferred_block_round state).
+by case (parent_block_round (qc_vote_data qc) > preferred_block_round state).
 Qed.
 
 Lemma update_pbr_geq state qc :
   preferred_block_round state <= preferred_block_round (update state qc).
 Proof.
 rewrite /update.
-case H: (block_round (qc_vote_data qc) > preferred_block_round state) => //.
+case H: (parent_block_round (qc_vote_data qc) > preferred_block_round state) => //.
 by move/ltnW: H => ->.
 Qed.
 
 Lemma update_qc_gt state qc :
-  block_round (qc_vote_data qc) <= preferred_block_round (update state qc).
+  parent_block_round (qc_vote_data qc) <= preferred_block_round (update state qc).
 Proof.
-rewrite /update; case H: (preferred_block_round state < (block_round (qc_vote_data qc))) => //.
+rewrite /update; case H: (preferred_block_round state < (parent_block_round (qc_vote_data qc))) => //.
 by rewrite leqNgt H.
 Qed.
 
 Lemma update_pbr_P state qc:
-  reflect (preferred_block_round (update state qc) = block_round (qc_vote_data qc))
-          (preferred_block_round state <= block_round (qc_vote_data qc)).
+  reflect (preferred_block_round (update state qc) = parent_block_round (qc_vote_data qc))
+          (preferred_block_round state <= parent_block_round (qc_vote_data qc)).
 Proof.
 apply: (iffP idP); rewrite /update;
-case H: (block_round (qc_vote_data qc) > preferred_block_round state);
+case H: (parent_block_round (qc_vote_data qc) > preferred_block_round state);
 rewrite leq_eqVlt H ?orbF ?orbT //; move/eqP=> //.
 Qed.
 
 Lemma update_maxn state qc:
   update state qc =
   mkConsensusState (last_vote_round state)
-                   (maxn (preferred_block_round state) (block_round (qc_vote_data qc))).
+                   (maxn (preferred_block_round state) (parent_block_round (qc_vote_data qc))).
 Proof.
-rewrite /update /maxn; case: ((preferred_block_round state) < (block_round (qc_vote_data qc))) => //=.
+rewrite /update /maxn; case: ((preferred_block_round state) < (parent_block_round (qc_vote_data qc))) => //=.
 by case state.
 Qed.
 
@@ -137,18 +138,18 @@ Qed.
 (************************************************************)
 
 Definition votable state b :=
-  let: (rd, lvr, pbr) :=
-     ((round b),
+  let: (rd, qcr, lvr, pbr) :=
+     ((round b), (qc_round b),
      (last_vote_round state),
-     (preferred_block_round state)) in [&& rd > lvr & rd >= pbr].
+     (preferred_block_round state)) in [&& rd > lvr & qcr >= pbr].
 
 Lemma votable_updateP state b:
   reflect (votable (update state (qc_of b)) b)
-  (votable state b && (round b >= block_round (qc_vote_data (qc_of b)))).
+  (votable state b && (qc_round b >= qc_parent_round b)).
 Proof.
   apply: (iffP andP); rewrite /votable update_eq_lvr.
-- rewrite /update; case (preferred_block_round state < block_round (qc_vote_data (qc_of b)));
-  by move=> [H1 H2]; move/andP: H1=> [-> H1] //; rewrite ltnW //.
+- rewrite /update; case (preferred_block_round state < parent_block_round (qc_vote_data (qc_of b)));
+  move=> [H1 H2]; move/andP: H1=> [-> H1] //; rewrite ltnW //.
 - move/andP => [->] //= H.
   apply/andP; rewrite (leq_trans (update_pbr_geq _ _) H) //=.
   by apply: (leq_trans (update_qc_gt state _)).
@@ -156,7 +157,7 @@ Qed.
 
 Lemma votable_update_round_geq state b:
   (votable (update state (qc_of b)) b) =
-  (votable state b && (round b >= block_round (qc_vote_data (qc_of b)))).
+  (votable state b && (qc_round b >= qc_parent_round b)).
 Proof.
 by apply/(sameP idP); apply: votable_updateP.
 Qed.
@@ -181,7 +182,7 @@ Qed.
 
 Lemma voted_br_gt_qcr state b:
   voted_on state b = true ->
-  round b >= block_round (qc_vote_data (qc_of b)).
+  qc_round b >= qc_parent_round b.
 Proof.
 rewrite /voted_on /voting_rule.
 case H: (votable (update state (qc_of b)) b).
@@ -191,8 +192,8 @@ Qed.
 
 Lemma ineq_voted_on state b:
   (voted_on state b) = [&& (round b > last_vote_round state),
-                         (round b >= preferred_block_round state) &
-                         (round b >= block_round (qc_vote_data (qc_of b)))].
+                         (qc_round b >= preferred_block_round state) &
+                         (qc_round b >= qc_parent_round b)].
 Proof.
 by rewrite voted_on_votable votable_update_round_geq /votable -andbA.
 Qed.
@@ -239,7 +240,6 @@ rewrite voted_on_votable /next_state /voting_rule.
 by move/negbTE=>->; rewrite update_eq_lvr.
 Qed.
 
-
 Lemma next_state_lvr_if state b:
   next_state state b =
   let: pbr:= preferred_block_round (update state (qc_of b)) in
@@ -262,15 +262,15 @@ Qed.
 
 Lemma next_state_maxn state b:
   (next_state state b) =
-  let: u_pbr := (maxn (preferred_block_round state) (qc_round b)) in
+  let: u_pbr := (maxn (preferred_block_round state) (qc_parent_round b)) in
   mkConsensusState
-    (if (round b) >= maxn ((last_vote_round state).+1) u_pbr then round b else last_vote_round state)
+    (if (round b >= (last_vote_round state).+1) && (qc_round b >= u_pbr) then round b else last_vote_round state)
     u_pbr.
 Proof.
 rewrite /next_state /voting_rule update_maxn.
-set pbr:= (maxn (preferred_block_round state) (qc_round b)).
-rewrite /votable /= -geq_max.
-by case H: (maxn (last_vote_round state).+1 pbr <= round b).
+set pbr:= (maxn (preferred_block_round state) (qc_parent_round b)).
+rewrite /votable /=.
+by case H: ((last_vote_round state < round b) && (pbr <= qc_round b)).
 Qed.
 
 Lemma pbr_next_stateC state b c:
@@ -345,40 +345,6 @@ move/andP=>[Hlvr]; move/andP=> [H1 H2].
 by rewrite ineq_voted_on update_eq_lvr Hs H1 H2.
 Qed.
 
-(* TODO: figure out if we want to keep this one, probably obsoleted by *)
-(* comparator reasoning?*)
-Lemma next_stateC state b c:
-  next_state (next_state state b) c =
-  if (~~ voted_on state b || ((round b < round c) &&
-     ((qc_round c) <= round c))) then
-    next_state (update state (qc_of b)) c
-  else
-    (update (next_state state b) (qc_of c)).
-Proof.
-rewrite next_state_lvr_if [next_state (update _ _)_]next_state_lvr_if .
-case H: (~~ voted_on state b).
-- move/idP: (H); move/non_voted_on_update=> ->.
-  by rewrite pbr_update_next (next_state_lvr_static H) update_eq_lvr.
-move/negPn: H=> H; case I: (voted_on (next_state state b) c).
-- move/idP: (I); move/voting_gt; rewrite H /= ltnNge; move/negbTE =>->.
-  move/idP: (I); move/voted_next_update=>->; rewrite pbr_update_next /=.
-  by move/idP: I; move/voting_progress; move/voted_br_gt_qcr=>->.
-move/negbT: (I); rewrite ineq_voted_on negb_and.
-rewrite (next_state_lvr_round H) next_state_pbr_update.
-rewrite ineq_voted_on; move/orP=>[|].
-- by move/negbTE=>->/=; rewrite update_maxn (next_state_lvr_round H) /=.
-move/negbTE=>->; rewrite andbF orFb update_eq_lvr pbr_update_next.
-case J: (round b < round c);
-last by rewrite !update_maxn (next_state_lvr_round H) next_state_pbr_update !update_maxn /=.
-move/negbT: (I); rewrite voted_on_votable /votable.
-move: (H); rewrite ineq_voted_on; move/andP=> [Hlvr]; move/andP=> [Hpbr Hbr].
-rewrite update_maxn (next_state_lvr_round H) J andTb; move/idP: J=> J/=.
-rewrite next_state_maxn /= maxnAC geq_max.
-rewrite [block_round (qc_vote_data (qc_of b)) <= _]leq_eqVlt (leq_ltn_trans Hbr J) orbT andbT.
-rewrite geq_max leq_eqVlt (leq_ltn_trans Hpbr J) orbT andTb; move/negbTE=>-> /=.
-by rewrite !update_maxn /= maxnAC.
-Qed.
-
 Lemma next_state_updateC state qc x:
   voted_on (update state qc) x ->
   next_state (update state (qc)) x =
@@ -390,11 +356,10 @@ Qed.
 
 Lemma voted_on_maxn state b:
   (voted_on state b) =
-  (round b >= maxn
-               (maxn ((last_vote_round state).+1) (preferred_block_round state))
-               (qc_round b)).
+  (round b >=  (last_vote_round state).+1) && (qc_round b >= maxn (preferred_block_round state)
+               (qc_parent_round b)).
 Proof.
-by rewrite !geq_max -andbA ineq_voted_on.
+by rewrite !geq_max  ineq_voted_on.
 Qed.
 
 (************************************************************)
@@ -528,47 +493,54 @@ Qed.
 (************************************************************)
 
 Definition comparator state1 :=
-  maxn (last_vote_round state1).+1 (preferred_block_round state1).
+  ((last_vote_round state1).+1, (preferred_block_round state1)).
 
 Definition state_compare state1 state2 :=
-  comparator state1 <= comparator state2.
+  ((comparator state1).1 <= (comparator state2).1) && ((comparator state1).2 <= (comparator state2).2).
 
 Delimit Scope state_scope with STATE.
 Open Scope state_scope.
 
 Notation "state1 <% state2" := (state_compare state1 state2) (at level 40) :state_scope.
 
+Lemma comparators_transitive:
+  transitive state_compare.
+Proof.
+move => s2 s1 s3 H12 H23; move/andP: H12=> [H12fst H12snd].
+move/andP: H23=> [H23fst H23snd]; rewrite /state_compare (leq_trans H12fst H23fst).
+by rewrite (leq_trans H12snd).
+Qed.
+
 Lemma voting_comparator state x:
   (voted_on state x) ->
-  (comparator (next_state state x) = (round x).+1).
+  (comparator (next_state state x) = ((round x).+1, (maxn (comparator state).2 (qc_parent_round x)))).
 Proof.
 rewrite next_state_lvr_if fun_if /comparator /= =>H.
-rewrite H; apply/maxn_idPl; move/idP:H; rewrite voted_on_votable.
-by move/andP=>[_ H]; apply ltnW; rewrite ltnS.
+by rewrite H update_maxn /= maxnC.
 Qed.
 
 Lemma non_voting_comparator state x:
   ~~ voted_on state x ->
-  comparator (next_state state x) = maxn (comparator state) (qc_round x).
+  comparator (next_state state x) = ((comparator state).1, (maxn (comparator state).2 (qc_parent_round x))).
 Proof.
 move=>Hnv; rewrite next_state_lvr_if; move/negbTE: (Hnv)=>->.
-by rewrite /comparator update_maxn /= maxnA.
+by rewrite /comparator update_maxn /=.
 Qed.
 
 Lemma voting_comparator_eq state b:
     (voted_on state b) =
-    ((comparator state <= round b) && ((qc_round b) <= round b))
-    .
+    ((comparator state).1 <= round b) && ((comparator state).2 <= (qc_round b)) && ((qc_parent_round b) <= qc_round b).
 Proof.
-by rewrite /comparator geq_max -andbA -ineq_voted_on.
+by  rewrite /comparator ineq_voted_on /= andbA.
 Qed.
 
 Lemma voting_gt_compare state1 state2 x:
   state1 <% state2 -> voted_on state2 x -> voted_on state1 x.
 Proof.
-move=> H; rewrite 2!voted_on_maxn; apply leq_trans.
-rewrite geq_max leq_maxr leq_max andbT.
-by apply/orP; left.
+move=> H; rewrite 2!voted_on_maxn.
+move/andP=> [Hlv2 Hpr2]; move/andP: H=> [Hlv12 Hpr12].
+rewrite (leq_trans Hlv12 Hlv2) /=; move:Hpr2; rewrite 2!geq_max.
+by move/andP=> [Hpr2 ->]; rewrite (leq_trans Hpr12 Hpr2).
 Qed.
 
 Lemma voting_next_gt state x:
@@ -577,22 +549,14 @@ Proof.
 rewrite next_state_lvr_if.
 case Hx:(voted_on state x); rewrite /state_compare /=.
 - move/idP: Hx; rewrite voted_on_maxn.
-  rewrite leq_max geq_max; move/andP=> [H _].
-  by apply/orP; left; apply ltnW.
-rewrite update_maxn /= leq_max 2!geq_max ltnS leqnn andTb.
+  rewrite geq_max; move/andP=> [Hlv Hpr].
+  by rewrite update_maxn /= leq_max leqnn orTb andbT ltnW.
+rewrite update_maxn /=. ltnS leqnn andTb.
 rewrite leq_maxl andbT leq_max.
 case I: (last_vote_round state < preferred_block_round state);
 first by rewrite orTb orbT.
 move/negbT: I; rewrite ltnNge; move/negPn=> H.
 by rewrite orFb; apply/orP; left; apply ltnW.
-Qed.
-
-Lemma voting_processing_gt state bs:
-  state <% (node_processing state bs).1.
-Proof.
-elim: bs state=> [|b s IHs] state /=; first by rewrite /state_compare.
-rewrite node_processing_cons1; move:(@voting_next_gt state b).
-move/leq_trans; apply; apply IHs.
 Qed.
 
 Lemma voting_next_inner state1 state2 x:
@@ -615,20 +579,6 @@ rewrite 2!next_state_lvr_if H1 H2.
 move: H12; rewrite /state_compare /comparator 2!update_maxn /=.
 rewrite !maxnA=>H12; rewrite geq_max leq_max H12 orTb andTb.
 by rewrite leq_max leqnn orbT.
-Qed.
-
-Lemma voting_processing_inner state1 state2 bs:
-  state1 <% state2 ->
-  (node_processing state1 bs).1 <% (node_processing state2 bs).1.
-Proof.
-move: state1 state2; elim bs => [|b s IHs]=> state1 state2 H12 //.
-by rewrite 2!node_processing_cons1 IHs // voting_next_inner.
-Qed.
-
-Lemma comparators_transitive:
-  transitive (fun s1 s2 => (comparator s1) <= (comparator s2)).
-Proof.
-by move=> s1 s2 s3; apply leq_trans.
 Qed.
 
 Lemma node_processing_sorted state bs:

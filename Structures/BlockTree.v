@@ -800,8 +800,19 @@ Definition get_block (bt : BlockTree) k : BType :=
 Definition all_blocks (bt : BlockTree) := [seq get_block bt k | k <- dom bt].
 Definition all_chains bt := [seq compute_chain bt b | b <- all_blocks bt].
 
+Definition direct_parent b1 b2 :=
+  (parent b1 b2) && (round b2 == (round b1).+1).
+
 Definition chain b bseq:=
-  path (fun b1 b2 => (parent b1 b2) && (round b2 == (round b1).+1)) b bseq.
+  path direct_parent b bseq.
+
+Lemma chain_to_parent b bseq:
+  (path direct_parent b bseq) ->
+  (path parent b bseq).
+Proof.
+elim: bseq b=>[|x xs IHs] b //=.
+by move/andP=>[/andP [Hpar _] Hpath]; rewrite Hpar (IHs _ Hpath).
+Qed.
 
 Notation "chain [ :: x1 ; x2 ; .. ; xn ]" := (chain x1 ( x2 :: .. [:: xn] ..))
   (at level 0, format "chain [ :: '['  x1 ; '/'  x2 ; '/'  .. ; '/'  xn ']' ]"

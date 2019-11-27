@@ -188,20 +188,27 @@ Canonical valid_block_subFinType := Eval hnf in [subFinType of valid_block].
 
 Implicit Type vb : valid_block.
 
+Definition type_val (vb: valid_block) : BType :=
+  ((val \o val) vb).
+Coercion type_val: valid_block >-> BType.
+
+Definition data_val (vb: valid_block) : BDataType :=
+  ((val \o val) vb).
+Coercion data_val: valid_block >-> BDataType.
+
 Definition valid vb mkB : valid_block :=
-  mkB (let: mkValid _ vbP := vb return (source_valid (val (val vb))) && qc_valid (qc_of (val (val vb))) && (size (qc_relevant (qc_of (val (val vb)))) == 2*f+1) in vbP).
+  mkB (let: mkValid _ vbP := vb return (source_valid vb) && qc_valid (qc_of vb) && (size (qc_relevant (qc_of vb)) == 2*f+1) in vbP).
 
 Lemma valid_blockE vb : valid (fun sP => @mkValid vb sP) = vb.
 Proof. by case: vb. Qed.
 
 Definition node_in_votes(n: NodeState): pred valid_block :=
-  fun vb => addr_of n \in (qc_addresses (qc_of (val (val vb)))).
+  fun vb => addr_of n \in (qc_addresses (qc_of vb)).
 
-Notation "'qc#' vb" :=
-  (qc_hash (val (val (vb)))) (at level 40).
+Notation "'qc#' vb" := (qc_hash vb) (at level 40).
 
 Notation "'qc_round' vb" :=
-  (block_round (qc_vote_data (qc_of (val (val (vb)))))) (at level 40).
+  (block_round (qc_vote_data (qc_of vb))) (at level 40).
 
 Definition block_in_voting(n: NodeState): pred valid_block :=
   fun (vb:valid_block) => has (fun b => (#b == qc# vb) && (round b == (qc_round vb))) (voted_by_node n).
@@ -215,7 +222,7 @@ Hypothesis BFT:
 
 Lemma nodes_in_votes_relevantE vb:
   [set v: Validator| node_in_votes (val v) vb] =
-  [set v: Validator| (public_key (val v)) \in (qc_keys (qc_of (val (val vb))))].
+  [set v: Validator| (public_key (val v)) \in (qc_keys (qc_of vb))].
 Proof.
 apply eq_finset=> x/=.
 rewrite /node_in_votes /qc_addresses /addr_of mem_map //.
@@ -283,7 +290,7 @@ by move/andP: Hb1=>[_ /eqP ->]; move/andP: Hb2=>[_ /eqP ->]; rewrite eq_sym Hr.
 Qed.
 
 Lemma valid_qc_ancestor_is_parent (n: NodeState) (block: BType) vb:
-  parent block (val (val vb)) ->
+  parent block vb ->
   block_in_voting n vb ->
   ((#block == qc# vb) && (round block == qc_round vb)) &&
   (block_data block \in (voted_in_processing GenesisState [seq block_data i | i<- block_log n])).
@@ -295,7 +302,10 @@ by rewrite -Hbb0 eq_refl Hround0.
 Qed.
 
 Definition vb_parent (vb1 vb2: valid_block) :=
-  parent (val (val vb1)) (val (val vb2)).
+  parent vb1 vb2.
+
+Definition vb_chained (vb1 vb2: valid_block) :=
+  direct_parent vb1 vb2.
 
 
 

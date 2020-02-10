@@ -36,30 +36,27 @@ Variable verifB: Hash -> PublicKey -> Signature -> bool.
 Notation BType := (BlockType inj_hashB verifB).
 Notation QC := (QuorumCert Hash Signature (Phant Address)).
 
-Implicit Type b: BType.
+Implicit Type bd: BDataType.
 
 Notation "# b" := (hashB b) (at level 20).
 
 Parameter peers : seq Address.
 Parameter GenesisBlock : BType.
 
-Definition qc_of b := (proof (block_data b)).
-Definition qc_hash b := (block_hash (qc_vote_data (qc_of b))).
-
-Definition genesis_round := (round (block_data GenesisBlock)).
+Definition genesis_round := (round GenesisBlock).
 
 (* In fact, it's a forest, as it also keeps orphan blocks *)
 Definition BlockTree := union_map [ordType of Hash] BType.
 
 Implicit Type bt : BlockTree.
 
-Definition btHasBlock bt b :=
+Definition btHasBlock bt (b: BType) :=
   (#b \in dom bt) && (find (#b) bt == Some b).
 
 Notation "b ∈ bt" := (btHasBlock bt b) (at level 70).
 Notation "b ∉ bt" := (~~ btHasBlock bt b) (at level 70).
 
-Definition btExtend bt b :=
+Definition btExtend bt (b: BType) :=
   (* We only add fresh blocks which qc is in bt *)
   if #b \in dom bt then
     if find (#b) bt == Some b then
@@ -70,12 +67,21 @@ Definition btExtend bt b :=
       (#b \\-> b \+ bt).
 
 Definition Blockchain := seq BType.
-Definition parent (b1 b2: BType) := #b1 == qc_hash b2.
-Definition chained (bc: seq BType):= path parent GenesisBlock bc.
+
+Definition qc_of bd := (proof bd).
+Definition qc_hash bd := (block_hash (qc_vote_data (qc_of bd))).
+Definition qc_round bd := (block_round (qc_vote_data (qc_of bd))).
+Definition qc_parent_hash bd := (parent_block_hash (qc_vote_data (qc_of bd))).
+Definition qc_parent_round bd := (parent_block_round (qc_vote_data (qc_of bd))).
+
+Definition parent b1 b2 := (hashB b1 == qc_hash b2) && (round b1 == qc_round b2) && (qc_hash b1 == qc_parent_hash b2) && (qc_round b1 == qc_parent_round b2).
+Definition chained (bc: seq BType):= path [eta parent: rel BType] GenesisBlock bc.
 
 Definition bcLast (bc : Blockchain) := last GenesisBlock bc.
 
 Definition subchain (bc1 bc2 : Blockchain) := exists p q, bc2 = p ++ bc1 ++ q.
+
+Implicit Type (b: BType).
 
 Definition has_init_block (bt : BlockTree) :=
   find (# GenesisBlock) bt = Some GenesisBlock.
@@ -86,7 +92,7 @@ Lemma has_init_block_free bt hb :
 Proof. move=>Ib /eqP Ng; rewrite/has_init_block findF; case: ifP=>/eqP//=. Qed.
 
 Definition validH (bt : BlockTree) :=
-  forall h b, find h bt = Some b -> h = hashB b.
+  forall h (b:BType), find h bt = Some b -> h = hashB b.
 
 Lemma validH_free bt b :
   validH bt -> validH (free (# b) bt).
@@ -95,7 +101,7 @@ Proof. by move=>Vh h c; rewrite findF;case: ifP=>//_ /Vh. Qed.
 Lemma validH_undef : validH um_undef.
 Proof. by rewrite/validH=>h b; rewrite find_undef. Qed.
 
-Lemma btExtendV bt b :
+Lemma btExtendV bt (b:BType) :
   valid (btExtend bt b) -> valid bt.
 Proof.
 rewrite/btExtend; case: ifP.
@@ -734,13 +740,15 @@ Function compute_chain_up_to (bound: BType) bt b {measure round b} : Blockchain 
     | None => [::]
     | Some prev =>
       if prev == bound then [:: b] else
-        if (round b <= round prev) then [::] else
+        if (round prev < round b) && parent prev b then
           rcons (nosimpl (compute_chain_up_to bound (free (# b) bt) prev)) b
+        else
+          [::]
     end
   else [::].
 Proof.
 move=> bound bt b Hb prev Hprev Hgen.
-move/negbT; rewrite leqNgt; move/negbNE=> Hbound.
+move/andP=>[H _].
 by apply/ltP.
 Qed.
 
@@ -756,26 +764,25 @@ Lemma last_compute_chain_up_to (bound: BType) bt b:
   last (head bound l) (behead l) = if l is [::] then bound else b.
 Proof.
 apply compute_chain_up_to_rec=>//=; move=> {bt b} bt b Hb prev Hprev.
-case =>[|Hgenesis _] //; case =>[|] //.
-move/negbT; rewrite leqNgt; move/negbNE=> Hround.
-move=> _ _ _; set l:= (compute_chain_up_to bound (free (# b) bt) prev).
-rewrite -(last_cons GenesisBlock) head_rcons -headI.
+case =>[|Hgenesis _] //; move/andP=>[Hround Hpar] _ /=.  
+set l:= (compute_chain_up_to bound (free (# b) bt) prev).
+move=> H; rewrite -(last_cons GenesisBlock) head_rcons -headI.
 by rewrite last_rcons; case l=>//.
 Qed.
 
 Lemma compute_chain_up_to_is_chained (bound: BType) bt b:
   validH bt ->
   let: l := (compute_chain_up_to bound bt b) in
-  path parent (head bound l) (behead l).
+  path [eta parent: rel BType] (head bound l) (behead l).
 Proof.
 apply compute_chain_up_to_rec=>//=; move=> {bt b} bt b Hb prev Hprev.
-case =>[|Hgenesis _] //; case =>[|] //.
-move/negbT; rewrite leqNgt; move/negbNE=> Hround.
-move=> _ _; move: (last_compute_chain_up_to bound (free (#b) bt) prev).
+case =>[|Hgenesis _] //; move/andP=> [Hround Hpar] _ /=. 
+move: (last_compute_chain_up_to bound (free (#b) bt) prev).
 set l:= (compute_chain_up_to bound (free (# b) bt) prev).
 case H: l=> [| x xs] /= Hlast IH Hvalid //=.
 rewrite rcons_path (IH (validH_free Hvalid)) andTb.
-by rewrite /parent Hlast (Hvalid _ _ Hprev).
+rewrite /parent Hlast (Hvalid _ _ Hprev).
+by move/andP: Hpar=>[/andP[/andP[_ ->] ->] ->]; rewrite eq_refl.
 Qed.
 
 Lemma compute_chain_is_chained bt b:
@@ -784,14 +791,14 @@ Lemma compute_chain_is_chained bt b:
 Proof.
 rewrite /chained /compute_chain.
 apply compute_chain_up_to_ind=> //=; move=> {bt b} bt b Hb prev Hprev; try by case (parent GenesisBlock GenesisBlock) => //=.
-- by rewrite /parent; move/eqP=> HprevG Hvalid; rewrite (Hvalid _ _ Hprev) HprevG eq_refl /= -HprevG (Hvalid _ _ Hprev) eq_refl.
-- case =>[|Hgen] _ //; case=> [|] //.
-move/negbT; rewrite leqNgt; move/negbNE=> Hround.
-move => _ _; move: (last_compute_chain_up_to GenesisBlock (free (#b) bt) prev).
+- by move/eqP => HprevG Hvalid; case H: (parent GenesisBlock b)=> //=; rewrite H.
+- case =>[|Hgen] _ //; move/andP=> [Hrds Hpar] _ .
+move: (last_compute_chain_up_to GenesisBlock (free (#b) bt) prev).
 set l:= (compute_chain_up_to GenesisBlock (free (# b) bt) prev).
 case H: l=> [| x xs] /= Hlast //=.
 - by case HGb: (parent GenesisBlock b) => //=; rewrite andbT.
-- case HGx: (parent GenesisBlock x)=> /= IH Hvalid //=; rewrite rcons_path Hlast {3}/parent (Hvalid _ _ Hprev) eq_refl andbT.
+- case HGx: (parent GenesisBlock x)=> /= IH Hvalid //=; rewrite rcons_path Hlast {3}/parent (Hvalid _ _ Hprev) eq_refl .
+move/andP: Hpar=>[/andP[/andP[_ ->] ->] ->]; rewrite !andbT.
 by apply (IH (validH_free Hvalid)).
 Qed.
 
@@ -808,7 +815,7 @@ Definition chain b bseq:=
 
 Lemma chain_to_parent b bseq:
   (path direct_parent b bseq) ->
-  (path parent b bseq).
+  (path [eta parent: rel BType] b bseq).
 Proof.
 elim: bseq b=>[|x xs IHs] b //=.
 by move/andP=>[/andP [Hpar _] Hpath]; rewrite Hpar (IHs _ Hpath).

@@ -17,6 +17,8 @@ Section BlockType.
 
 Variable Hash: countType.
 
+(*we establish an ordering on Hashes through the pickle function given by *)
+(*their countability (countType). We recall pickle is an injection in ℕ.*)
 Definition pickle_ordering: rel [eqType of Hash] :=
   fun h1 h2 => (pickle h1) < (pickle h2).
 
@@ -35,7 +37,6 @@ Qed.
 Definition hash_ordMixin := OrdMixin pickle_irref pickle_trans pickle_spec.
 Definition hash_ordType := OrdType _ hash_ordMixin.
 Canonical hash_ordType.
-
 
 Record VoteData := mkVD {
   block_hash: Hash;
@@ -65,15 +66,10 @@ Definition vote_data_countMixin := CanCountMixin vote_nats_cancel.
 Canonical  vote_data_countType :=
   Eval hnf in CountType VoteData vote_data_countMixin.
 
-(* The VoteMsg assume there's a way to hash and sign VoteData*)
+(* The VoteMsg assumes there's a way to hash and sign VoteData*)
 (* The Pubkey, SignType are countTypes, reflecting they are serializable*)
 Variables (PublicKey: countType) (Signature: countType)
             (HashV: signType VoteData PublicKey Signature).
-
-(* Definition VD_eqMixin := *)
-(*   Eval hnf in (InjEqMixin (@hash_inj _ HashV)). *)
-(* Canonical VD_eqType := *)
-(*   Eval hnf in EqType _ VD_eqMixin. *)
 
 Variable Address: hashType PublicKey.
 
@@ -81,11 +77,6 @@ Record VoteMsg (phA: phant Address) := mkVM {
   vote_data: VoteData;
   vote: (PublicKey * Signature);
 }.
-
-(* Definition PK_eqMixin := *)
-(*   Eval hnf in InjEqMixin (@hash_inj _ Address). *)
-(* Canonical PK_eqType := *)
-(*   Eval hnf in EqType _ PK_eqMixin. *)
 
 Definition vm2triple (v: VoteMsg (Phant Address)) :=
   let: mkVM vd pks := v in (vd, pks).

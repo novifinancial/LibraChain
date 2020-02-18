@@ -305,7 +305,7 @@ Proof.
 elim/um_indf: m=>/=[||k v m Hi V' P' V P].
 - by case: validUn=>//=_; rewrite valid_undef.
 - by rewrite unitR dom0 domPtK.
-rewrite -joinCA in V; move: (Hi (validR V))=>{Hi}Hi.
+rewrite -joinCA in V; move: Hi; move/(_ (validR V))=> Hi.
 have A: antisymmetric ord by move=>???/andP[]H1 H2; move: (nsym H1 H2).
 apply: (eq_sorted (@trans K) (A K))=>//=.
 rewrite joinCA in V.
@@ -335,8 +335,8 @@ Proof.
 have A: antisymmetric ord by move=>???/andP[]H1 H2; move: (nsym H1 H2).
 case: ifP=>X V P; rewrite joinCA in V.
 - apply: (eq_sorted (@trans K) (A K))=>//=.
-  + rewrite path_min_sorted//.
-    move=>z; rewrite domUn inE (validR V) domPtK inE /=.
+  + rewrite path_min_sorted //.
+    apply/allP=> z; rewrite domUn inE (validR V) domPtK inE /=.
     case/orP; first by move/eqP=>->.
     by move/(path_ord_sorted (sorted_dom m) P).
   apply: uniq_perm=>/=; rewrite ?dom_uniq ?[_&&true]andbC//=.

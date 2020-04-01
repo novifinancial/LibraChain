@@ -20,8 +20,10 @@ Variable T: choiceType.
 Variable validators: seq T.
 Hypothesis Huniq_val: uniq validators.
 
+(* Validators is the small subType defined by their enumeration validators.*)
 Definition Validators := seq_sub validators.
 
+(* In this context, honest is a predicate on validators.*)
 Variable honest: pred Validators.
 Variable f: nat.
 

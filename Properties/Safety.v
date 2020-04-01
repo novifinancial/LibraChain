@@ -116,7 +116,7 @@ Canonical ns_choiceType := ChoiceType _ ns_choiceMixin.
 Definition ns_countMixin := CanCountMixin can_ns_components.
 Canonical ns_countType := CountType _ ns_countMixin.
 
-Notation GenesisState := (genesis_state Hash Signature Address Command NodeTime).
+Notation GenesisState := (genesis_state inj_hashB verifB ).
 
 Definition voted_by_node(n: NodeState) :=
   (voted_in_processing GenesisState [seq block_data i | i <- block_log n]).
@@ -202,6 +202,7 @@ Definition valid vb mkB : valid_block :=
 Lemma valid_blockE vb : valid (fun sP => @mkValid vb sP) = vb.
 Proof. by case: vb. Qed.
 
+(* node_in_votes captures the inclusion of this node in the block's signatures *)
 Definition node_in_votes(n: NodeState): pred valid_block :=
   fun vb => addr_of n \in (qc_addresses (qc_of vb)).
 
@@ -210,9 +211,14 @@ Notation "'qc#' vb" := (qc_hash vb) (at level 40).
 Notation "'qc_round' vb" :=
   (block_round (qc_vote_data (qc_of vb))) (at level 40).
 
+(* block_in_voting captures the inclusion of the valid block in the node's *)
+(* voting log  *)
 Definition block_in_voting(n: NodeState): pred valid_block :=
-  fun (vb:valid_block) => has (fun b => (#b == qc# vb) && (round b == (qc_round vb))) (voted_by_node n).
+  fun (vb:valid_block) => has (fun b => (parent hashB) b vb) (voted_by_node n).
 
+(* This captures that the only blocks one can find this node's signatures are *)
+(* those in its voting log => the node only votes according to the procedure *)
+(* we describe in voted_by_node. *)
 Definition honest : pred NodeState := fun n =>
   [set vb |node_in_votes n vb] \subset [set vb|block_in_voting n vb].
 
@@ -220,6 +226,8 @@ Hypothesis BFT:
   (#|[set x : Validator |honest (val x)]| >= (2*f).+1) &&
   (size validator_nodes == (3*f).+1).
 
+(* the definition of node_in_votes through the injective hashes (addresses) of *)
+(* public keys is the same as enumerating the public keys *)
 Lemma nodes_in_votes_relevantE vb:
   [set v: Validator| node_in_votes (val v) vb] =
   [set v: Validator| (public_key (val v)) \in (qc_keys (qc_of vb))].
@@ -244,6 +252,7 @@ move=> x; rewrite /qc_relevant /node_keys mem_filter mem_undup.
 by rewrite -filter_map mem_filter /= andbC.
 Qed.
 
+(* The intersection lemma implies a honest validator voted for any pair of blocks*)
 Lemma honest_in_two_blocks (vb1 vb2: valid_block):
     exists (x:Validator), (node_in_votes (val x) vb1 && node_in_votes (val x) vb2 && honest (val x)).
 Proof.
@@ -253,18 +262,19 @@ move=>[x]; rewrite 4!inE; move/andP => [H12 Hhx]; move/andP: {H12}H12=>[H1 H2].
 by exists x; rewrite Hhx H1 H2.
 Qed.
 
+(* That node has both blocks in its logs *)
 Lemma honest_voted_two_blocks (vb1 vb2: valid_block):
-  exists (n: Validator), (block_in_voting (val n) vb1) && (block_in_voting (val n) vb2).
+  exists (n: Validator), (block_in_voting (val n) vb1) && (block_in_voting (val n) vb2 && honest(val n)).
 Proof.
 move: (honest_in_two_blocks vb1 vb2)=> [x]; move/andP=> [H12 Hh].
-move/andP: H12=> [H1 H2]; exists x.
+move/andP: H12=> [H1 H2]; exists x; rewrite Hh.
 move/subsetP: (Hh); move/(_ vb1); rewrite inE H1 inE=> -> //.
 by move/subsetP: Hh; move/(_ vb2); rewrite inE H2 inE=> -> //.
 Qed.
 
 Lemma block_in_voting_processingP (n:NodeState) vb:
   (block_in_voting n vb) ->
-  exists b, ((#b == qc# vb) && (round b == qc_round vb))  &&
+  exists b, (parent hashB b vb)  &&
     (b \in (voted_in_processing GenesisState [seq block_data i | i <- block_log n])).
 Proof.
 by move/hasP=> [b Hvb Hhb]; exists b; rewrite Hhb.
@@ -276,37 +286,37 @@ Lemma valid_blocks_same_round_equal (vb1 vb2: valid_block):
   (qc_round vb1 == qc_round vb2) -> qc# vb1 == qc# vb2.
 Proof.
 move=> Hr.
-move: (honest_voted_two_blocks vb1 vb2)=> [n]; move/andP=> [H1 H2].
+move: (honest_voted_two_blocks vb1 vb2)=> [n]; move/andP=> [H1 /andP[H2 Hh]].
 move/block_in_voting_processingP: H1=> [b1 /andP [Hb1 Hproc1]].
 move/block_in_voting_processingP: H2=> [b2 /andP [Hb2 Hproc2]].
 case H12: (b1 == b2).
-- by move/andP: Hb1=> [/eqP <- _]; move/andP: Hb2=> [/eqP <- _]; move/eqP: H12=>->.
+- by move/andP: Hb1=>[/andP[/andP[/eqP[<-] _] _] _]; move/andP: Hb2=>[/andP[/andP[/eqP[<-] _] _] _]; move/eqP: H12=>->.
 case/orP: (leq_total (round b1) (round b2)).
 - move/(voted_in_processing_ltn (negbT H12) Hproc1 Hproc2); move/ltn_eqF.
-  by move/andP: Hb1=>[_ /eqP ->]; move/andP: Hb2=>[_ /eqP ->]; rewrite Hr.
+  by move/andP: Hb1=>[/andP[/andP[_ /eqP[->]] _] _]; move/andP: Hb2=>[/andP[/andP[_ /eqP[->]] _] _]; rewrite Hr.
 rewrite eq_sym in H12.
 move/(voted_in_processing_ltn (negbT H12) Hproc2 Hproc1); move/ltn_eqF.
-by move/andP: Hb1=>[_ /eqP ->]; move/andP: Hb2=>[_ /eqP ->]; rewrite eq_sym Hr.
+by move/andP: Hb1=>[/andP[/andP[_ /eqP[->]] _] _]; move/andP: Hb2=>[/andP[/andP[_ /eqP[->]] _] _]; rewrite eq_sym Hr.
 Qed.
 
 Lemma valid_qc_ancestor_is_parent (n: NodeState) (block: BType) vb:
-  parent block vb ->
+  parent hashB block vb ->
   block_in_voting n vb ->
-  ((#block == qc# vb) && (round block == qc_round vb)) &&
   (block_data block \in (voted_in_processing GenesisState [seq block_data i | i<- block_log n])).
 Proof.
 move=> Hpar.
-move/block_in_voting_processingP=> [b0 /andP[/andP [Hb0 Hround0] Hproc0]].
-move: (Hb0); move/eqP: Hpar=><-; move/eqP/inj_hashB=> Hbb0.
-by rewrite -Hbb0 eq_refl Hround0.
+move/block_in_voting_processingP=> [b0 /andP[/andP [/andP [/andP [Hb0 Hrd0] Hqc0] Hqcr0] Hproc0]].
+move: (Hb0); move/andP: Hpar=> [/andP[/andP [/eqP[<-] _] _] _]; move/eqP/inj_hashB=> Hbb0.
+by rewrite -Hbb0.
 Qed.
 
-Definition vb_parent (vb1 vb2: valid_block) :=
-  parent vb1 vb2.
+(* The parenthood relationship over valid blocks *)
+Definition vb_parent :=
+  [eta (parent hashB): rel valid_block].
 
+(* The chaining relationship — parents with consecutive round — over valid blocks *)
 Definition vb_chained (vb1 vb2: valid_block) :=
   direct_parent vb1 vb2.
-
 
 
 End ValidBlocks.

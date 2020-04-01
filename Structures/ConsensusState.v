@@ -590,7 +590,7 @@ by rewrite update_maxn /= leq_max 2!leqnn orTb andTb.
 Qed.
 
 Lemma node_processing_sorted state bs:
-  sorted (fun s1 s2 => state_compare s1 s2) (unzip1 (node_processing state bs).2).
+  sorted (fun s1 s2 => s1 <% s2) (unzip1 (node_processing state bs).2).
 Proof.
 move: state; elim: bs=>[| b bs IHb] state //.
 rewrite node_processing_cons; move:(IHb (next_state state b)); rewrite /path /sorted /=.
@@ -606,6 +606,13 @@ Proof.
 by case: bs=> [|x xs]//=; rewrite node_processing_cons /=.
 Qed.
 
+Lemma node_processing_path state bs:
+  path (fun s1 s2 => s1 <% s2) state (unzip1 (node_processing state bs).2).
+Proof.
+move: (node_processing_sorted state bs); rewrite node_processing_head.
+rewrite /sorted; case: bs=>[|b bs] //=; by rewrite comparators_reflexive.
+Qed.
+
 Lemma node_processing_last s0 state bs b:
   last s0 (unzip1 (node_processing state (rcons bs b)).2) = (node_processing state bs).1.
 Proof.
@@ -615,7 +622,7 @@ by rewrite (IHs (next_state state x)).
 Qed.
 
 (************************************************************)
-(** Sequence of elements which a node voted on             **)
+(** Sequence of blocks which a node voted on             **)
 (************************************************************)
 
 Definition voted_in_processing state bseq :=
@@ -853,6 +860,21 @@ by move/eqP: Hsy=>->; move/eqP: Hy=><-.
 by move/orP=>[//|] Hin Hcomp; move/andP: (Hcomp _ Hin)=>[_ ->].
 Qed.
 
+Lemma voted_in_processing_subseq_qc_parent_rel state bseq b1 b2:
+  subseq [:: b1; b2] (voted_in_processing state bseq) ->
+  qc_parent_round b1 <= qc_round b2.
+Proof.
+move: state b1 b2; elim: bseq => [|b bs Hbs] //= state b1 b2; rewrite voted_in_processing_cons.
+case Hvotb: (voted_on state b)=>/=; last by move/Hbs.
+case Hb1b: (b1 == b); last by move/Hbs.
+rewrite sub1seq (eqP Hb1b).
+move/voted_in_processing_exists => [s /andP[/andP[Hs Hvotsb2] Hb2]].
+move: (order_path_min comparators_transitive (node_processing_path (next_state state b) bs)).
+move/allP; move/(_ _ Hs); move/andP=>[_]; rewrite (voting_comparator Hvotb) /= geq_max; move/andP=>[_].
+move: Hvotsb2; rewrite ineq_voted_on; move/andP=>[_]; move/andP=> [H _] Hb.
+apply:(leq_trans Hb H).
+Qed.
+
 Lemma voted_in_processing_uniq state bseq:
   uniq (voted_in_processing state bseq).
 Proof.
@@ -890,6 +912,7 @@ move => Hneq Hb1 Hb2 Hb12; move:(voted_in_processing_both Hneq Hb1 Hb2 Hb12)=> H
 move/subseq_sorted: Hsub; move/(_ _ _ (voted_in_processing_sorted state bseq)).
 by move/(_ rounds_transitive) => /=; rewrite andbT.
 Qed.
+
 
 (************************************************************)
 (** Node Aggregation                                       **)

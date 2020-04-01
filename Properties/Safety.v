@@ -272,6 +272,13 @@ move/subsetP: (Hh); move/(_ vb1); rewrite inE H1 inE=> -> //.
 by move/subsetP: Hh; move/(_ vb2); rewrite inE H2 inE=> -> //.
 Qed.
 
+(* This is the off-by one difference between most formalisms of LibraBFT and *)
+(* the present Coq formalization. LibraBFT often speaks of confirmed / QC'ed blocks and *)
+(* focuses on the blocks, treating the downward blocks which QC confirms them *)
+(* implicitly. We can't afford to do this in Coq — since we chose to not have *)
+(* an entire separate relation and type for "dangling" QCs — hence we have to *)
+(* be very explicit with naming these confirming blocks. Hence note that here, *)
+(* we express that if vb is in the vote log of n, its parent is voted for. *)
 Lemma block_in_voting_processingP (n:NodeState) vb:
   (block_in_voting n vb) ->
   exists b, (parent hashB b vb)  &&
@@ -317,6 +324,36 @@ Definition vb_parent :=
 (* The chaining relationship — parents with consecutive round — over valid blocks *)
 Definition vb_chained (vb1 vb2: valid_block) :=
   direct_parent vb1 vb2.
+
+(* Lemma S3 in LibraBFT v2, ported to v3 formalization *)
+(* See comment of block_in_voting_processingP to understand why it takes us 4 *)
+(* blocks to form a 3-chain *)
+Lemma three_chain_higher (b0 b1 b2 c2 b c : valid_block):
+  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) &&
+  (vb_parent b c) ->
+  (round b > round b2) ->
+  (* a.k.a. previous_round b > round b0 in this presentation*)
+  (qc_round b >= round b0).
+Proof.
+move/andP=> [/andP[Hpath Hpar23] Hparbc].
+move: (honest_voted_two_blocks c2 c)=> [n /andP[Hvot3 /andP[Hvotc Hh]] Hqc].
+move: (valid_qc_ancestor_is_parent Hparbc Hvotc) => Hbvot.
+move: Hpath; rewrite /vb_chained.
+rewrite -cat1s cat_path; move/andP=>[Hb0b1]; rewrite /= andbT; move/andP=> [Hpar12 Hrd12].
+move: Hb0b1; rewrite /= andbT; move/andP=> [Hpar01 Hrd01].
+move: (valid_qc_ancestor_is_parent Hpar23 Hvot3) => H2vot.
+move/andP: Hparbc=> [/andP[/andP[Hb /eqP[Hrd]] Hparent] Hparent_rd].
+move/andP: (Hpar01)=> [/andP[/andP[H0 /eqP[Hrd0]] Hparent0] Hparent_rd0].
+move/andP: (Hpar12)=> [/andP[/andP[H1 /eqP[Hrd1]] Hparent1] Hparent_rd1].
+rewrite Hrd0 (eqP Hparent_rd1).
+(* TODO : clean up type inference in this imbricated subtype*)
+apply: (@voted_in_processing_subseq_qc_parent_rel _ _ _ _ _ _
+        GenesisState [seq block_data i | i <- block_log (val n)]).
+apply: voted_in_processing_both => //=.
+- by apply/negPn=> H; move:Hqc; rewrite (eqP H) ltnn.
+by rewrite ltnW.
+Qed.
+
 
 
 End ValidBlocks.

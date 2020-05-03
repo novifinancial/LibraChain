@@ -472,6 +472,22 @@ move/eqP/inj_hashB=> Hbb0.
 by exists [::]=>/=; apply/eqP.
 Qed.
 
+
+Theorem safety (b0 b1 b2 c2: valid_block) (d0 d1 d2 e2: valid_block):
+  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) ->
+  (path vb_chained d0 [:: d1 ; d2 ]) && (vb_parent d2 e2) ->
+  (exists bs: seq valid_block, (path vb_parent b0 bs) && (block_data (last b0 bs) == d0)) \/
+  (exists ds: seq valid_block, (path vb_parent d0 ds) && (block_data (last d0 ds) == b0)).
+Proof.
+wlog: b0 b1 b2 c2 d0 d1 d2 e2 / (round b0 <= round d0)=> H Hb0 Hd0.
+- move/orP: (leq_total (round b0) (round d0))=>[H1|H1];
+  [move: (H b0 b1 b2 c2 _ d1 d2 e2 H1 Hb0 Hd0) | move: (H d0 d1 d2 e2 _ b1 b2 c2 H1 Hd0 Hb0) ]; try by apply.
+  by case; [right|left].
+left; apply: (@three_chain_linked _ _ _ _ Hb0 (round d0) d0 d1 d2).
+rewrite eq_refl andTb H andbT /= andbT; move/andP: Hd0=>[/andP[H1 /andP[H2 _]] _].
+by rewrite /vb_parent; move/andP: H1=>[-> _]; move/andP: H2=>[-> _].
+Qed.
+
 End ValidBlocks.
 
 End Safety.

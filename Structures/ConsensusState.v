@@ -922,7 +922,6 @@ Qed.
 Definition node_aggregator bseq :=
   (foldl (fun stateNvote => voting_rule stateNvote.1) (genesis_state,false) bseq).1.
 
-
 Definition commit_rule state (qc: QC)(bround: nat) :=
   let: potential_commit_round := (parent_block_round (qc_vote_data qc)) in
   if (potential_commit_round.+1 == (block_round (qc_vote_data qc))) &&

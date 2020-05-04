@@ -70,7 +70,6 @@ Implicit Type b: BDataType.
 Notation "# b" := (hashB b) (at level 20).
 
 Parameter peers : seq Address.
-Parameter GenesisBlock : BType.
 
 (* f is the byzantine fraction (see below) *)
 Variable f: nat.
@@ -79,9 +78,11 @@ Variable f: nat.
 Definition all_valid (h: Hash) (s: seq (PublicKey * Signature)) :=
   all (fun ps => (@verify_op _ _ _ BSType h (fst ps) (snd ps))) s.
 
+(* a valid qc only contains distinct and valid signatures *)
 Definition qc_valid (qc: QC) :=
   all_valid (block_hash (qc_vote_data qc)) (qc_votes qc) && (uniq (qc_votes qc)).
 
+(* a valid block is properly signed by its emitter *)
 Definition source_valid (block: BType) :=
   let: (p, s) := (block_source block) in
        (@verify_op _ _ _ BSType (#block) p s).
@@ -117,9 +118,6 @@ Definition ns_countMixin := CanCountMixin can_ns_components.
 Canonical ns_countType := CountType _ ns_countMixin.
 
 Notation GenesisState := (genesis_state inj_hashB verifB ).
-
-Definition voted_by_node(n: NodeState) :=
-  (voted_in_processing GenesisState [seq block_data i | i <- block_log n]).
 
 Definition addr_of(n: NodeState) := (hash_op Address (public_key n)).
 
@@ -162,16 +160,21 @@ Hypothesis Huniq_vals: uniq validator_nodes.
 
 (* There is a finite number of blocks at any given time *)
 
-Definition all_blocks := foldl cat [::] (map (block_log) validator_nodes).
+Definition all_blocks :=
+  flatten [seq block_log n | n <- validator_nodes].
 
 Definition BlockFinType := seq_sub all_blocks.
 
 Section ValidBlocks.
+
+Definition valid_pred (block: BType) :=
+  source_valid block && qc_valid (qc_of block) && (size (qc_relevant (qc_of block)) == 2*f+1) && (qc_hash block != #block).
+
 (* Valid blocks are the small subType which presents with enough valid *)
 (* signatures *)
 Record valid_block : Type := mkValid {
     block :> BlockFinType;
-    _: source_valid (val block) && qc_valid (qc_of (val block)) && (size (qc_relevant (qc_of (val block))) == 2*f+1);
+    _: valid_pred (val block);
 }.
 
 Canonical valid_block_subType := Eval hnf in [subType for block].
@@ -197,10 +200,12 @@ Definition data_val (vb: valid_block) : BDataType :=
 Coercion data_val: valid_block >-> BDataType.
 
 Definition valid vb mkB : valid_block :=
-  mkB (let: mkValid _ vbP := vb return (source_valid vb) && qc_valid (qc_of vb) && (size (qc_relevant (qc_of vb)) == 2*f+1) in vbP).
+  mkB (let: mkValid _ vbP := vb return (source_valid vb) && qc_valid (qc_of vb) && (size (qc_relevant (qc_of vb)) == 2*f+1) && (qc_hash vb != #vb) in vbP).
 
 Lemma valid_blockE vb : valid (fun sP => @mkValid vb sP) = vb.
 Proof. by case: vb. Qed.
+
+Parameter GenesisBlock : valid_block.
 
 (* node_in_votes captures the inclusion of this node in the block's signatures *)
 Definition node_in_votes(n: NodeState): pred valid_block :=
@@ -208,13 +213,21 @@ Definition node_in_votes(n: NodeState): pred valid_block :=
 
 Notation "'qc#' vb" := (qc_hash vb) (at level 40).
 
-Notation "'qc_round' vb" :=
-  (block_round (qc_vote_data (qc_of vb))) (at level 40).
+(* The parenthood relationship over valid blocks *)
+Definition vb_parent :=
+  [eta (parent hashB): rel valid_block].
+
+(* The chaining relationship — parents with consecutive round — over valid blocks *)
+Definition vb_chained (vb1 vb2: valid_block) :=
+  direct_parent vb1 vb2.
+
+Definition voted_by_node(n: NodeState): seq BType :=
+  [ seq b <- block_log n | ((block_data b) \in voted_in_processing GenesisState [seq block_data i | i <- block_log n]) && (valid_pred b)].
 
 (* block_in_voting captures the inclusion of the valid block in the node's *)
 (* voting log  *)
 Definition block_in_voting(n: NodeState): pred valid_block :=
-  fun (vb:valid_block) => has (fun b => (parent hashB) b vb) (voted_by_node n).
+  fun (vb:valid_block) => has (fun b:BType => parent hashB b vb) (voted_by_node n).
 
 (* This captures that the only blocks one can find this node's signatures are *)
 (* those in its voting log => the node only votes according to the procedure *)
@@ -241,7 +254,7 @@ Lemma validators_in_votes vb:
   #|[set v: Validator| node_in_votes (val v) vb]| == (2*f).+1.
 Proof.
 rewrite -addn1.
-move/valP/andP: (vb)=>[_]; move/eqP=><-; rewrite nodes_in_votes_relevantE.
+move/valP/andP: (vb)=> [/andP[_ H] _]; move/eqP: H=><-; rewrite nodes_in_votes_relevantE.
 rewrite (@card_seq_sub _ _ (fun (v:NodeState) => (public_key v) \in _) Huniq).
 rewrite -(size_map public_key) -uniq_size_uniq.
 - rewrite map_inj_in_uniq ?filter_uniq //.
@@ -250,6 +263,15 @@ rewrite -(size_map public_key) -uniq_size_uniq.
 - by rewrite /qc_relevant filter_uniq // undup_uniq.
 move=> x; rewrite /qc_relevant /node_keys mem_filter mem_undup.
 by rewrite -filter_map mem_filter /= andbC.
+Qed.
+
+Lemma honest_in_one_block (vb: valid_block):
+  exists (x: Validator), (node_in_votes (val x) vb) && honest (val x).
+Proof.
+move/card_S2f_gt: (validators_in_votes vb); move/(_ Huniq)=> Hcard.
+move: (Hcard _ BFT).
+move/(leq_ltn_trans (leq0n f)); rewrite card_gt0; move/set0Pn=>[x].
+rewrite !inE; move/andP=> [Hn Hh]; by exists x; apply/andP.
 Qed.
 
 (* The intersection lemma implies a honest validator voted for any pair of blocks*)
@@ -272,16 +294,24 @@ move/subsetP: (Hh); move/(_ vb1); rewrite inE H1 inE=> -> //.
 by move/subsetP: Hh; move/(_ vb2); rewrite inE H2 inE=> -> //.
 Qed.
 
+(* This is the off-by one difference between most formalisms of LibraBFT and *)
+(* the present Coq formalization. LibraBFT often speaks of confirmed / QC'ed blocks and *)
+(* focuses on the blocks, treating the downward blocks which QC confirms them *)
+(* implicitly. We can't afford to do this in Coq — since we chose to not have *)
+(* an entire separate relation and type for "dangling" QCs — hence we have to *)
+(* be very explicit with naming these confirming blocks. Hence note that here, *)
+(* we express that if vb is in the vote log of n, its parent is voted for. *)
 Lemma block_in_voting_processingP (n:NodeState) vb:
   (block_in_voting n vb) ->
-  exists b, (parent hashB b vb)  &&
+  exists b, (parent hashB b vb) &&
     (b \in (voted_in_processing GenesisState [seq block_data i | i <- block_log n])).
 Proof.
-by move/hasP=> [b Hvb Hhb]; exists b; rewrite Hhb.
+move/hasP=> [b Hvb Hhb]; exists b; rewrite Hhb andTb.
+by move: Hvb; rewrite mem_filter; move/andP=> [/andP[-> Hval] Hlog].
 Qed.
 
 (* This is S2 in LibraBFT v2. The statement on state hashes is trivial *)
-(* editing block_in_voting, and non-essential for the proof *)
+(* editing block_in_voting *)
 Lemma valid_blocks_same_round_equal (vb1 vb2: valid_block):
   (qc_round vb1 == qc_round vb2) -> qc# vb1 == qc# vb2.
 Proof.
@@ -310,14 +340,153 @@ move: (Hb0); move/andP: Hpar=> [/andP[/andP [/eqP[<-] _] _] _]; move/eqP/inj_has
 by rewrite -Hbb0.
 Qed.
 
-(* The parenthood relationship over valid blocks *)
-Definition vb_parent :=
-  [eta (parent hashB): rel valid_block].
+(* Lemma S3 in LibraBFT v2, ported to v3 formalization *)
+(* See comment of block_in_voting_processingP to understand why it takes us 4 *)
+(* blocks to form a 3-chain *)
+Lemma three_chain_higher (b0 b1 b2 c2 b c : valid_block):
+  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) &&
+  (vb_parent b c) ->
+  (round b > round b2) ->
+  (* a.k.a. previous_round b > round b0 in this presentation*)
+  (qc_round b >= round b0).
+Proof.
+move/andP=> [/andP[Hpath Hpar23] Hparbc].
+move: (honest_voted_two_blocks c2 c)=> [n /andP[Hvot3 /andP[Hvotc Hh]] Hqc].
+move: (valid_qc_ancestor_is_parent Hparbc Hvotc) => Hbvot.
+move: Hpath; rewrite /vb_chained.
+rewrite -cat1s cat_path; move/andP=>[Hb0b1]; rewrite /= andbT; move/andP=> [Hpar12 Hrd12].
+move: Hb0b1; rewrite /= andbT; move/andP=> [Hpar01 Hrd01].
+move: (valid_qc_ancestor_is_parent Hpar23 Hvot3) => H2vot.
+move/andP: Hparbc=> [/andP[/andP[Hb /eqP[Hrd]] Hparent] Hparent_rd].
+move/andP: (Hpar01)=> [/andP[/andP[H0 /eqP[Hrd0]] Hparent0] Hparent_rd0].
+move/andP: (Hpar12)=> [/andP[/andP[H1 /eqP[Hrd1]] Hparent1] Hparent_rd1].
+rewrite Hrd0 (eqP Hparent_rd1).
+(* TODO : clean up type inference in this imbricated subtype*)
+apply: (@voted_in_processing_subseq_qc_parent_rel _ _ _ _ _ _
+        GenesisState [seq block_data i | i <- block_log (val n)]).
+apply: voted_in_processing_both => //=.
+- by apply/negPn=> H; move:Hqc; rewrite (eqP H) ltnn.
+by rewrite ltnW.
+Qed.
 
-(* The chaining relationship — parents with consecutive round — over valid blocks *)
-Definition vb_chained (vb1 vb2: valid_block) :=
-  direct_parent vb1 vb2.
+Lemma lt_wf_ind : forall (n : nat) (P : nat -> Prop),
+  (forall n0 : nat, (forall m : nat, (m < n0) -> P m) -> P n0) ->
+  P n.
+Proof.
+move=>n P H; apply: Wf_nat.lt_wf_ind=> [m mn].
+by apply: (H m)=>[m0 m0m]; apply: mn; apply/ltP.
+Qed.
 
+Lemma logged_in_all_blocks (v: Validator) (b: BType):
+  b \in block_log (val v) -> b \in all_blocks.
+Proof.
+move=> Hlog.
+have H: (block_log (val v)) \in [seq block_log i | i <- validator_nodes].
+- by apply/mapP; exists (val v)=> //; move/valP: (v).
+by apply/flattenP; exists (block_log (val v)).
+Qed.
+
+Lemma valid_block_in_voting_processingP (v: Validator) vb:
+  let n := val v in
+  (block_in_voting n vb) ->
+  exists b: valid_block, (vb_parent b vb) &&
+    ((block_data b) \in (voted_in_processing GenesisState [seq block_data i | i <- block_log n])).
+Proof.
+rewrite /=; move/hasP=> [b Hvb Hhb].
+move: Hvb; rewrite mem_filter; move/andP=> [/andP[Hvot Hval] Hlog].
+move/logged_in_all_blocks: Hlog=>Hball; pose bb : BlockFinType := (Sub b Hball).
+pose bv : valid_block := (Sub bb Hval).
+exists bv; rewrite /= /vb_parent {1}/bv /parent.
+by rewrite /type_val /comp !SubK -/(parent hashB b vb) Hhb andTb.
+Qed.
+
+(* Property S4 in LibraBFT v2, ported to v3 formalization *)
+
+(* This includes a pretty strong variation in introducing d, the "lagging" *)
+(* element in the blocks in comparison with the earlier three-chain.  'd' serves *)
+(* exclusively to introduce a voted block carrying a QC for c, ensuring *)
+(* qc_parent_round c < qc_round c, i.e.  qc_round b < round b, which is essential *)
+(* to the use of the induction hypothesis. *)
+(* We are therefore proving a weaker property than S4 — which is *)
+(* incorrect as stated, though this technical error is of no consequence, since *)
+(* the lemma yields the final theorem S5 anyway. *)
+Lemma three_chain_linked (b0 b1 b2 c2 : valid_block):
+  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) ->
+  forall n: nat,
+    (forall b c d: valid_block, (round b == n) && (path vb_parent b [:: c ; d]) && (round b >= round b0) ->
+                           (exists bs: seq valid_block, (path vb_parent b0 bs) && (block_data (last b0 bs) == b))).
+Proof.
+move=>Hchain; elim/lt_wf_ind=> n IHn b c d; move/andP=>[/andP[Hn /andP[Hparbc /andP[Hparcd _]]] Hbb0].
+case Hbb2: (round b > round b2).
+- have Hqcb: (qc_round b >= round b0); first by apply: (@three_chain_higher b0 b1 b2 c2 b c); rewrite // Hparbc andbT Hchain.
+  (* qc_round b <= round b — this is the only part that uses d *)
+  have Hqc_cd: qc_parent_round c <= qc_round c.
+  - move: (honest_in_one_block d)=> [nd /andP[Hvotd]].
+    move/subsetP; move/(_ d); rewrite 2!inE; move/(_ Hvotd)=> Hvotingd.
+    move: (valid_qc_ancestor_is_parent Hparcd Hvotingd).
+    by move/voted_in_processing_exists=>[sb /andP[/andP[_ Hd] _]]; move: (voted_br_gt_qcr Hd).
+  move: (Hparbc) Hqc_cd; rewrite {1}/vb_parent /parent; move/andP=>[/andP[/andP[_ /eqP[<-]] _] /eqP[<-]].
+  (* set parb and prove round parb = qc_round b *)
+  move: (honest_in_two_blocks b c)=> [node /andP[/andP[Hvotb Hvotc] Hhon]]; move/subsetP: (Hhon); move/(_ b).
+  rewrite 2!inE; move/(_ Hvotb); move/valid_block_in_voting_processingP=> [parb /andP[Hparbb Hvotparb]].
+  move: (Hparbb); rewrite {1}/vb_parent {1}/parent; move/andP=> [/andP[/andP[Hparb_h /eqP[Hrb]] _] _].
+  rewrite -Hrb=> Hrd_parbb.
+  (* establish parb != b & the prelude for voted_in_processing_ltn *)
+  have Hrounds_parb_b : round parb < round b.
+  - move/subsetP: Hhon; move/(_ c); rewrite 2!inE; move/(_ Hvotc).
+    move/valid_block_in_voting_processingP=> [parc /andP[Hparc Hvotparc]].
+    move: (Hparc) (Hparbc); rewrite {1 2}/vb_parent {1 2}/parent.
+    move/andP=>[/andP[/andP[Hparc_h _] _] _]; move/andP=>[/andP[/andP[Hb_h _] _] _].
+    move: Hb_h; rewrite -(eqP Hparc_h); move/eqP/inj_hashB=>Heqparcb; rewrite -Heqparcb in Hvotparc Hparc.
+    apply: (voted_in_processing_ltn _ Hvotparb Hvotparc Hrd_parbb).
+    move/valP: (b); move/andP=>[_]; rewrite -(eqP Hparb_h).
+    by apply/contra=> HH; apply/eqP; congr hashB; rewrite (eqP HH) /=.
+  rewrite (eqP Hn) in Hrounds_parb_b; move: (IHn (round parb) Hrounds_parb_b parb b c); rewrite eqxx andTb.
+  rewrite -Hrb in Hqcb; rewrite Hqcb /= 2!andbT Hparbb Hparbc /=.
+  move/(_ is_true_true)=> [bs Hbs]; exists (rcons bs b).
+  rewrite rcons_path last_rcons eqxx andbT; move/andP: Hbs=>[->] /=.
+  by case bs=>[|x xs] /=; rewrite /vb_parent; move/eqP=>->.
+(* Prequel: unzip the vb_chained assumption *)
+move/andP: Hchain=> [Hchain Hb2c2]; have Hpar_chain: vb_parent b0 b1 && vb_parent b1 b2.
+by move: Hchain; rewrite /= andbT /vb_chained /direct_parent /vb_parent; move/andP=> [/andP[-> _] /andP[-> _]].
+have Hrd_chain: (round b1 == (round b0).+1) && (round b2 == (round b1).+1).
+by move: Hchain; rewrite /= andbT /vb_chained /direct_parent; move/andP=> [/andP[_ ->] /andP[_ ->]].
+(* Prequel : establish round b = qc_round c *)
+move/andP: (Hparbc)=> [/andP[/andP[Hqch_c Hqc_c]  _ ] _].
+move/negbT: Hbb2; rewrite -leqNgt leq_eqVlt; move/orP=>[Hbb2|Hbb2].
+- move: Hb2c2; rewrite {1}/vb_parent {1}/parent; move/andP=>[/andP[/andP[Hqch_c2 Hqc_c2] _] _].
+  move: Hbb2; rewrite (eqP Hqc_c2) (eqP Hqc_c); move/valid_blocks_same_round_equal.
+  rewrite -(eqP Hqch_c) -(eqP Hqch_c2); move/eqP/inj_hashB=> Heq_bb2.
+  by exists [:: b1; b2]; rewrite /= andbT Hpar_chain andTb eq_sym; apply/eqP.
+move: Hbb2; move/andP: (Hrd_chain)=>[_ /eqP[->]]; rewrite ltnS leq_eqVlt; move/orP=> [Hbb1|Hbb1].
+- move: Hbb1; rewrite (eqP Hqc_c); move/andP: (Hpar_chain)=>[_]; rewrite {1}/vb_parent {1}/parent.
+  move/andP=> [/andP[/andP[Hqch_b1 /eqP[->]] _] _]; move/valid_blocks_same_round_equal.
+  rewrite -(eqP Hqch_c) -(eqP Hqch_b1); move/eqP/inj_hashB=> Heq_bb1.
+  by exists [:: b1]; rewrite /= Heq_bb1 eqxx 2!andbT; move/andP: Hpar_chain=> [-> _].
+move: Hbb1; move/andP: Hrd_chain=> [/eqP[->] _]; rewrite ltnS=> Hbb1.
+move: (eqn_leq (round b0) (round b)); rewrite {}Hbb0 {}Hbb1 andbT; move/idP.
+move: Hpar_chain; rewrite andbC; move/andP=>[_]; rewrite {1}/vb_parent {1}/parent.
+move/andP=> [/andP[/andP[Hqch_b0 /eqP[->]] _] _]; rewrite (eqP Hqc_c).
+move/valid_blocks_same_round_equal; rewrite -(eqP Hqch_b0) -(eqP Hqch_c).
+move/eqP/inj_hashB=> Hbb0.
+by exists [::]=>/=; apply/eqP.
+Qed.
+
+
+Theorem safety (b0 b1 b2 c2: valid_block) (d0 d1 d2 e2: valid_block):
+  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) ->
+  (path vb_chained d0 [:: d1 ; d2 ]) && (vb_parent d2 e2) ->
+  (exists bs: seq valid_block, (path vb_parent b0 bs) && (block_data (last b0 bs) == d0)) \/
+  (exists ds: seq valid_block, (path vb_parent d0 ds) && (block_data (last d0 ds) == b0)).
+Proof.
+wlog: b0 b1 b2 c2 d0 d1 d2 e2 / (round b0 <= round d0)=> H Hb0 Hd0.
+- move/orP: (leq_total (round b0) (round d0))=>[H1|H1];
+  [move: (H b0 b1 b2 c2 _ d1 d2 e2 H1 Hb0 Hd0) | move: (H d0 d1 d2 e2 _ b1 b2 c2 H1 Hd0 Hb0) ]; try by apply.
+  by case; [right|left].
+left; apply: (@three_chain_linked _ _ _ _ Hb0 (round d0) d0 d1 d2).
+rewrite eq_refl andTb H andbT /= andbT; move/andP: Hd0=>[/andP[H1 /andP[H2 _]] _].
+by rewrite /vb_parent; move/andP: H1=>[-> _]; move/andP: H2=>[-> _].
+Qed.
 
 End ValidBlocks.
 

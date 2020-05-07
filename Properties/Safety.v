@@ -218,7 +218,7 @@ Definition vb_parent :=
   [eta (parent hashB): rel valid_block].
 
 (* The chaining relationship — parents with consecutive round — over valid blocks *)
-Definition vb_chained (vb1 vb2: valid_block) :=
+Definition vb_direct_parent (vb1 vb2: valid_block) :=
   direct_parent vb1 vb2.
 
 Definition voted_by_node(n: NodeState): seq BType :=
@@ -344,7 +344,7 @@ Qed.
 (* See comment of block_in_voting_processingP to understand why it takes us 4 *)
 (* blocks to form a 3-chain *)
 Lemma three_chain_higher (b0 b1 b2 c2 b c : valid_block):
-  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) &&
+  (path vb_direct_parent b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) &&
   (vb_parent b c) ->
   (round b > round b2) ->
   (* a.k.a. previous_round b > round b0 in this presentation*)
@@ -353,7 +353,7 @@ Proof.
 move/andP=> [/andP[Hpath Hpar23] Hparbc].
 move: (honest_voted_two_blocks c2 c)=> [n /andP[Hvot3 /andP[Hvotc Hh]] Hqc].
 move: (valid_qc_ancestor_is_parent Hparbc Hvotc) => Hbvot.
-move: Hpath; rewrite /vb_chained.
+move: Hpath; rewrite /vb_direct_parent.
 rewrite -cat1s cat_path; move/andP=>[Hb0b1]; rewrite /= andbT; move/andP=> [Hpar12 Hrd12].
 move: Hb0b1; rewrite /= andbT; move/andP=> [Hpar01 Hrd01].
 move: (valid_qc_ancestor_is_parent Hpar23 Hvot3) => H2vot.
@@ -411,7 +411,7 @@ Qed.
 (* incorrect as stated, though this technical error is of no consequence, since *)
 (* the lemma yields the final theorem S5 anyway. *)
 Lemma three_chain_linked (b0 b1 b2 c2 : valid_block):
-  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) ->
+  (path vb_direct_parent b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) ->
   forall n: nat,
     (forall b c d: valid_block, (round b == n) && (path vb_parent b [:: c ; d]) && (round b >= round b0) ->
                            (exists bs: seq valid_block, (path vb_parent b0 bs) && (block_data (last b0 bs) == b))).
@@ -446,11 +446,11 @@ case Hbb2: (round b > round b2).
   move/(_ is_true_true)=> [bs Hbs]; exists (rcons bs b).
   rewrite rcons_path last_rcons eqxx andbT; move/andP: Hbs=>[->] /=.
   by case bs=>[|x xs] /=; rewrite /vb_parent; move/eqP=>->.
-(* Prequel: unzip the vb_chained assumption *)
+(* Prequel: unzip the vb_direct_parent assumption *)
 move/andP: Hchain=> [Hchain Hb2c2]; have Hpar_chain: vb_parent b0 b1 && vb_parent b1 b2.
-by move: Hchain; rewrite /= andbT /vb_chained /direct_parent /vb_parent; move/andP=> [/andP[-> _] /andP[-> _]].
+by move: Hchain; rewrite /= andbT /vb_direct_parent /direct_parent /vb_parent; move/andP=> [/andP[-> _] /andP[-> _]].
 have Hrd_chain: (round b1 == (round b0).+1) && (round b2 == (round b1).+1).
-by move: Hchain; rewrite /= andbT /vb_chained /direct_parent; move/andP=> [/andP[_ ->] /andP[_ ->]].
+by move: Hchain; rewrite /= andbT /vb_direct_parent /direct_parent; move/andP=> [/andP[_ ->] /andP[_ ->]].
 (* Prequel : establish round b = qc_round c *)
 move/andP: (Hparbc)=> [/andP[/andP[Hqch_c Hqc_c]  _ ] _].
 move/negbT: Hbb2; rewrite -leqNgt leq_eqVlt; move/orP=>[Hbb2|Hbb2].
@@ -474,8 +474,8 @@ Qed.
 
 
 Theorem safety (b0 b1 b2 c2: valid_block) (d0 d1 d2 e2: valid_block):
-  (path vb_chained b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) ->
-  (path vb_chained d0 [:: d1 ; d2 ]) && (vb_parent d2 e2) ->
+  (path vb_direct_parent b0 [:: b1 ; b2 ]) && (vb_parent b2 c2) ->
+  (path vb_direct_parent d0 [:: d1 ; d2 ]) && (vb_parent d2 e2) ->
   (exists bs: seq valid_block, (path vb_parent b0 bs) && (block_data (last b0 bs) == d0)) \/
   (exists ds: seq valid_block, (path vb_parent d0 ds) && (block_data (last d0 ds) == b0)).
 Proof.

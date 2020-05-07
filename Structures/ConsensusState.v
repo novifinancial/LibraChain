@@ -511,6 +511,7 @@ Definition comparator state1 :=
 Definition state_compare state1 state2 :=
   ((comparator state1).1 <= (comparator state2).1) && ((comparator state1).2 <= (comparator state2).2).
 
+Declare Scope state_scope.
 Delimit Scope state_scope with STATE.
 Open Scope state_scope.
 
@@ -652,7 +653,7 @@ Lemma comparator_next state1 state2 b:
   -> comparator (next_state state1 b) = comparator (next_state state2 b).
 Proof.
 move=> H12; case H1: (voted_on state1 b); move: (H1); rewrite voting_comparator_eq H12 -voting_comparator_eq=> H2.
--  by rewrite (voting_comparator H1) (voting_comparator H2) /=; move/eqP: H12; rewrite xpair_eqE; move/andP =>[_ /eqP[->]].
+- by rewrite (voting_comparator H1) (voting_comparator H2) /=; move/eqP: H12; rewrite xpair_eqE; move/andP =>[_]; move/eqP=>->.
 by rewrite (non_voting_comparator (negbT H1)) (non_voting_comparator (negbT H2)) H12.
 Qed.
 

@@ -763,8 +763,8 @@ Lemma last_compute_chain_up_to (bound: BType) bt b:
   let: l := (compute_chain_up_to bound bt b) in
   last (head bound l) (behead l) = if l is [::] then bound else b.
 Proof.
-apply compute_chain_up_to_rec=>//=; move=> {bt b} bt b Hb prev Hprev.
-case =>[|Hgenesis _] //; move/andP=>[Hround Hpar] _ /=.  
+apply compute_chain_up_to_rec=>//=; move=> {b} bt b Hb prev Hprev.
+case =>[|Hgenesis _] //; move/andP=>[Hround Hpar] _ /=.
 set l:= (compute_chain_up_to bound (free (# b) bt) prev).
 move=> H; rewrite -(last_cons GenesisBlock) head_rcons -headI.
 by rewrite last_rcons; case l=>//.
@@ -775,8 +775,8 @@ Lemma compute_chain_up_to_is_chained (bound: BType) bt b:
   let: l := (compute_chain_up_to bound bt b) in
   path [eta parent: rel BType] (head bound l) (behead l).
 Proof.
-apply compute_chain_up_to_rec=>//=; move=> {bt b} bt b Hb prev Hprev.
-case =>[|Hgenesis _] //; move/andP=> [Hround Hpar] _ /=. 
+apply compute_chain_up_to_rec=>//=; move=> {b} bt b Hb prev Hprev.
+case =>[|Hgenesis _] //; move/andP=> [Hround Hpar] _ /=.
 move: (last_compute_chain_up_to bound (free (#b) bt) prev).
 set l:= (compute_chain_up_to bound (free (# b) bt) prev).
 case H: l=> [| x xs] /= Hlast IH Hvalid //=.
@@ -790,7 +790,7 @@ Lemma compute_chain_is_chained bt b:
   chained (compute_chain bt b).
 Proof.
 rewrite /chained /compute_chain.
-apply compute_chain_up_to_ind=> //=; move=> {bt b} bt b Hb prev Hprev; try by case (parent GenesisBlock GenesisBlock) => //=.
+apply compute_chain_up_to_ind=> //=; move=> {b} bt b Hb prev Hprev; try by case (parent GenesisBlock GenesisBlock) => //=.
 - by move/eqP => HprevG Hvalid; case H: (parent GenesisBlock b)=> //=; rewrite H.
 - case =>[|Hgen] _ //; move/andP=> [Hrds Hpar] _ .
 move: (last_compute_chain_up_to GenesisBlock (free (#b) bt) prev).

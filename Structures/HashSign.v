@@ -100,6 +100,7 @@ Definition hash_op (T: Type) (H: hashType T) :=
 Lemma hash_inj (T: Type) (H: hashType T) : injective (@hash_op T H).
 Proof. by case: H=> ?[b []]. Qed.
 
+Declare Scope hash_scope.
 Delimit Scope hash_scope with H.
 Open Scope hash_scope.
 
@@ -166,6 +167,7 @@ Module Import Exports.
 Coercion base : class_of >-> Hash.class_of.
 Coercion mixin : class_of >-> mixin_of.
 Coercion sort : type >-> Sortclass.
+Declare Scope signable_scope.
 Bind Scope signable_scope with sort.
 Coercion eqType : type >-> Equality.type.
 Canonical eqType.
@@ -187,6 +189,7 @@ End Exports.
 End Signable.
 Export Signable.Exports.
 
+Declare Scope sign_scope.
 Delimit Scope sign_scope with S.
 Open Scope sign_scope.
 

@@ -156,8 +156,6 @@ Qed.
 Definition qc_relevant(qc: QC):=
   filter (fun pk => pk \in node_keys) (undup (qc_keys qc)).
 
-Hypothesis Huniq_vals: uniq validator_nodes.
-
 (* There is a finite number of blocks at any given time *)
 
 Definition all_blocks :=

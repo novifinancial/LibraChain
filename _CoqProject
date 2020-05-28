@@ -1,0 +1,15 @@
+-Q Structures LibraChain
+
+-arg -w -arg -notation-overridden
+-arg -w -arg -local-declaration
+-arg -w -arg -redundant-canonical-projection
+-arg -w -arg -projection-no-head-constant
+
+Structures/SeqFacts.v
+Structures/Chains.v
+Structures/Blocks.v
+Structures/ConsensusState.v
+Structures/HashSign.v
+Structures/BlockTree.v
+Structures/BFTFacts.v
+Properties/Safety.v
